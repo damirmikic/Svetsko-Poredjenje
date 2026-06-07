@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="sr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SP Kvote</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-mark">SP</div>
+          <div>
+            <h1>SP Kvote</h1>
+            <p>Uporedjivanje kvota srpskih kladionica za World Cup 2026</p>
+          </div>
+        </div>
+        <div class="topbar-controls">
+          <div class="segmented" aria-label="Market">
+            <button class="active" type="button">1X2</button>
+            <button type="button">Pobednik</button>
+            <button type="button">Grupe</button>
+          </div>
+          <button class="refresh-button" id="refreshButton" type="button">
+            <span class="refresh-icon" aria-hidden="true"></span>
+            Osvezi
+          </button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="filter-rail" aria-label="Filteri">
+          <section>
+            <h2>Takmicenje</h2>
+            <label class="select-label">
+              <span>Turnir</span>
+              <select id="competitionSelect">
+                <option>World Cup 2026</option>
+              </select>
+            </label>
+            <label class="select-label">
+              <span>Sport</span>
+              <select>
+                <option>Fudbal</option>
+              </select>
+            </label>
+          </section>
+
+          <section>
+            <h2>Kladionice</h2>
+            <div id="bookmakerToggles" class="bookmaker-toggles"></div>
+          </section>
+
+          <section>
+            <h2>Pretraga</h2>
+            <label class="search-box">
+              <span class="search-icon" aria-hidden="true"></span>
+              <input id="searchInput" placeholder="Tim, liga, datum" type="search" />
+            </label>
+          </section>
+        </aside>
+
+        <section class="main-panel">
+          <div class="summary-strip">
+            <div>
+              <span class="metric-label">Mecevi</span>
+              <strong id="matchesCount">0</strong>
+            </div>
+            <div>
+              <span class="metric-label">Aktivni feedovi</span>
+              <strong id="activeFeeds">0/6</strong>
+            </div>
+            <div>
+              <span class="metric-label">Najbolja margina</span>
+              <strong id="bestMargin">-</strong>
+            </div>
+            <div>
+              <span class="metric-label">Azurirano</span>
+              <strong id="updatedAt">-</strong>
+            </div>
+          </div>
+
+          <div class="table-toolbar">
+            <div>
+              <h2>World Cup 2026 - 1X2 kvote</h2>
+              <p id="resultNote">Ucitavanje feedova...</p>
+            </div>
+            <div class="legend">
+              <span><i class="best-dot"></i> najbolja kvota</span>
+              <span><i class="missing-dot"></i> nema podatka</span>
+            </div>
+          </div>
+
+          <div class="odds-table-wrap">
+            <table class="odds-table">
+              <thead id="oddsHead"></thead>
+              <tbody id="oddsBody"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <aside class="signal-panel" aria-label="Signali">
+          <section>
+            <h2>Best value</h2>
+            <div id="opportunities" class="opportunity-list"></div>
+          </section>
+
+          <section>
+            <h2>Status feedova</h2>
+            <div id="feedStatus" class="feed-status"></div>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
