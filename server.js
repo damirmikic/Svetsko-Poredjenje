@@ -2,10 +2,9 @@ import { createServer } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
-import { fileURLToPath } from "node:url";
 
-const __dirname = fileURLToPath(new URL(".", import.meta.url));
-const publicDir = join(__dirname, "public");
+const projectDir = process.cwd();
+const publicDir = join(projectDir, "public");
 
 loadLocalEnv();
 
@@ -152,7 +151,7 @@ const contentTypes = {
 };
 
 function loadLocalEnv() {
-  const envPath = join(__dirname, ".env");
+  const envPath = join(projectDir, ".env");
   if (!existsSync(envPath)) return;
 
   const lines = readFileSync(envPath, "utf8").split(/\r?\n/);
@@ -1627,7 +1626,7 @@ async function handleStatic(req, res) {
   }
 }
 
-if (normalize(process.argv[1] || "") === normalize(fileURLToPath(import.meta.url))) {
+if (process.argv[1] && normalize(process.argv[1]) === normalize(join(projectDir, "server.js"))) {
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host}`);
