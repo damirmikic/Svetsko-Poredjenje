@@ -28,6 +28,21 @@ Ako je port 3000 vec zauzet, pokreni na drugom portu:
 PORT=3001 npm run dev
 ```
 
+## Netlify deploy
+
+Repo je spreman za Netlify:
+
+- Build command: `npm run build`
+- Publish directory: `public`
+- Functions directory: `netlify/functions`
+- `/api/*` se rewrite-uje na Netlify Function preko `netlify.toml`.
+
+U Netlify environment variables dodaj iste vrednosti koje koristis lokalno u `.env`, ako menjas default-e. Za trenutni setup je obicno dovoljan:
+
+```text
+PINNACLE_LEAGUE_CODE=fifa-world-cup
+```
+
 ## Pinnacle feed
 
 Opcioni parametri:
@@ -74,6 +89,8 @@ Aktivni normalizatori:
 
 ```text
 server.js          Node HTTP server, proxy/fetch i normalizacija kvota
+netlify.toml       Netlify build, functions i API rewrite konfiguracija
+netlify/functions  Serverless API entrypoint za Netlify
 public/index.html  App shell
 public/app.js      Dashboard logika i renderovanje
 public/styles.css  UI stilovi

@@ -192,6 +192,17 @@ function outcomeBest(match, outcome) {
   return match.best?.[outcome];
 }
 
+function lowestMarketOdd(match, bookmakerIds, outcome) {
+  return bookmakerIds
+    .filter((bookmakerId) => ![primaryReferenceBookmaker].includes(bookmakerId))
+    .map((bookmakerId) => ({
+      bookmakerId,
+      value: Number(outcomeValue(match.bookmakers?.[bookmakerId], outcome)),
+    }))
+    .filter((item) => Number.isFinite(item.value))
+    .sort((a, b) => a.value - b.value)[0] || null;
+}
+
 function favoriteMaxOdds(match) {
   const reference = match.bookmakers?.[primaryReferenceBookmaker];
   const candidates = matchWinnerOutcomes
@@ -306,9 +317,11 @@ function renderRows(matches) {
               const value = outcomeValue(entry, outcome);
               const best = outcomeBest(match, outcome);
               const isBest = best?.bookmakerId === bookmakerId && Number(best.value) === Number(value);
+              const lowest = lowestMarketOdd(match, enabled, outcome);
+              const isLowest = lowest?.bookmakerId === bookmakerId && Number(lowest.value) === Number(value);
               const highlight = highlightClass(match, bookmakerId, outcome, value);
               const stateClass = value
-                ? highlight || (isBest ? "best" : "")
+                ? highlight || (isBest ? "best" : isLowest ? "lowest" : "")
                 : "missing";
               const boundaryClass = index === 0 ? "group-start" : index === outcomes.length - 1 ? "group-end" : "";
               const className = ["odd-cell", stateClass, boundaryClass].filter(Boolean).join(" ");

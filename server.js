@@ -1544,12 +1544,12 @@ function buildOpportunities(matches) {
     .slice(0, 8);
 }
 
-async function handleOdds(req, res) {
+export async function getOddsPayload() {
   const startedAt = Date.now();
   const settled = await Promise.all(FEED_BOOKMAKERS.map(fetchBookmaker));
   const matches = aggregateMatches(settled);
 
-  sendJson(res, 200, {
+  return {
     generatedAt: Date.now(),
     elapsedMs: Date.now() - startedAt,
     bookmakers: DISPLAY_BOOKMAKERS.map(({ id, name, type, baseUrl, isReference }) => ({
@@ -1580,7 +1580,15 @@ async function handleOdds(req, res) {
           ? "No World Cup-labelled matches were returned by the enabled feeds yet."
           : null,
     },
-  });
+  };
+}
+
+export function getHealthPayload() {
+  return { ok: true, bookmakers: DISPLAY_BOOKMAKERS.length };
+}
+
+async function handleOdds(req, res) {
+  sendJson(res, 200, await getOddsPayload());
 }
 
 async function handleStatic(req, res) {
@@ -1602,35 +1610,37 @@ async function handleStatic(req, res) {
   }
 }
 
-const server = createServer(async (req, res) => {
-  try {
-    const url = new URL(req.url, `http://${req.headers.host}`);
-    if (url.pathname === "/api/odds") {
-      await handleOdds(req, res);
-      return;
+if (normalize(process.argv[1] || "") === normalize(fileURLToPath(import.meta.url))) {
+  const server = createServer(async (req, res) => {
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      if (url.pathname === "/api/odds") {
+        await handleOdds(req, res);
+        return;
+      }
+
+      if (url.pathname === "/api/health") {
+        sendJson(res, 200, getHealthPayload());
+        return;
+      }
+
+      await handleStatic(req, res);
+    } catch (error) {
+      sendJson(res, 500, { error: error.message });
+    }
+  });
+
+  server.on("error", (error) => {
+    if (error.code === "EADDRINUSE") {
+      console.error(`Port ${PORT} is already in use.`);
+      console.error(`Stop the existing server or run this one with: PORT=${PORT + 1} npm run dev`);
+      process.exit(1);
     }
 
-    if (url.pathname === "/api/health") {
-      sendJson(res, 200, { ok: true, bookmakers: DISPLAY_BOOKMAKERS.length });
-      return;
-    }
+    throw error;
+  });
 
-    await handleStatic(req, res);
-  } catch (error) {
-    sendJson(res, 500, { error: error.message });
-  }
-});
-
-server.on("error", (error) => {
-  if (error.code === "EADDRINUSE") {
-    console.error(`Port ${PORT} is already in use.`);
-    console.error(`Stop the existing server or run this one with: PORT=${PORT + 1} npm run dev`);
-    process.exit(1);
-  }
-
-  throw error;
-});
-
-server.listen(PORT, () => {
-  console.log(`SP Kvote running on http://localhost:${PORT}`);
-});
+  server.listen(PORT, () => {
+    console.log(`SP Kvote running on http://localhost:${PORT}`);
+  });
+}

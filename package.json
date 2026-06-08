@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "build": "node --check server.js && node --check public/app.js && node --check netlify/functions/api.js"
   },
   "engines": {
     "node": ">=18"
