@@ -35,7 +35,7 @@ Repo je spreman za Netlify:
 - Build command: `npm run build`
 - Publish directory: `public`
 - Functions directory: `netlify/functions`
-- `/api/*` se rewrite-uje na Netlify Function preko `netlify.toml`.
+- `/api/odds` i `/api/health` se rewrite-uju na Netlify Functions preko `netlify.toml`.
 
 U Netlify environment variables dodaj iste vrednosti koje koristis lokalno u `.env`, ako menjas default-e. Za trenutni setup je obicno dovoljan:
 
@@ -53,6 +53,7 @@ Opcioni parametri:
 - `PINNACLE_LEAGUE_IDS` comma-separated lista liga; kada je prazno, server trazi World Cup ligu iz Pinnacle `leagues` feeda.
 - `PINNACLE_LEAGUE_CODE` default `fifa-world-cup` za `odds/league` endpoint.
 - `PINNACLE_ODDS_TYPE`, `PINNACLE_VERSION`, `PINNACLE_SPECIAL_VERSION` default `1`, `0`, `0`.
+- `FEED_TIMEOUT_MS` default `4000`; kratak timeout pomaze da Netlify Function vrati parcijalne podatke umesto 502 kada neki feed visi.
 
 ## No-vig kolona
 

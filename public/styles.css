@@ -50,6 +50,7 @@ select {
   padding: 0 28px;
   border-bottom: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.92);
+  -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
   position: sticky;
   top: 0;

@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "build": "node --check server.js && node --check public/app.js && node --check netlify/functions/api.js"
+    "build": "node --check server.js && node --check public/app.js && node --check netlify/functions/odds.js && node --check netlify/functions/health.js && node --check netlify/lib/json.js"
   },
   "engines": {
     "node": ">=18"

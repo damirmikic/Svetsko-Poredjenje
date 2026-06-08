@@ -12,6 +12,7 @@ loadLocalEnv();
 const PORT = Number(process.env.PORT || 3000);
 const DUALSOFT_VERSION = process.env.DUALSOFT_VERSION || "2.44.3.18";
 const LOCALE = "sr";
+const FEED_TIMEOUT_MS = Number(process.env.FEED_TIMEOUT_MS || 4000);
 const ODDS_API_BASE = process.env.ODDS_API_BASE || "https://api.odds-api.io/v3";
 const ODDS_API_KEY = process.env.ODDS_API_KEY || "";
 const ODDS_API_SPORT = process.env.ODDS_API_SPORT || "football";
@@ -953,24 +954,30 @@ function createMatchKey(home, away, kickOffTime) {
 }
 
 async function fetchJson(url) {
-  const response = await fetch(url, {
-    headers: {
-      accept: "application/json,text/plain,*/*",
-      "accept-language": "sr,en;q=0.9",
-      "user-agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36",
-    },
-  });
-
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${text.slice(0, 180)}`);
-  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
 
   try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        accept: "application/json,text/plain,*/*",
+        "accept-language": "sr,en;q=0.9",
+        "user-agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36",
+      },
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${text.slice(0, 180)}`);
+    }
+
     return parseJsonPayload(text);
   } catch (error) {
-    throw new Error(`Invalid JSON: ${text.slice(0, 180)}`);
+    if (error.name === "AbortError") throw new Error(`Request timed out after ${FEED_TIMEOUT_MS} ms.`);
+    throw error.message?.startsWith("HTTP ") ? error : new Error(`Invalid JSON: ${error.message}`);
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -986,12 +993,22 @@ function pinnacleHeaders() {
 }
 
 async function fetchPinnacleJson(url) {
-  const response = await fetch(url, { headers: pinnacleHeaders() });
-  const text = await response.text();
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${text.slice(0, 180)}`);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: pinnacleHeaders() });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${text.slice(0, 180)}`);
+    }
+    return parseJsonPayload(text);
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error(`Request timed out after ${FEED_TIMEOUT_MS} ms.`);
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-  return parseJsonPayload(text);
 }
 
 function getPinnacleWorldCupLeagueIds(leaguesPayload) {
@@ -1046,7 +1063,7 @@ function extractFirstSseData(buffer) {
 
 async function fetchSseSnapshot(url) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
 
   try {
     const response = await fetch(url, {
