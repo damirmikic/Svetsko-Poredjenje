@@ -56,6 +56,27 @@ Opcioni parametri:
 - `PINNACLE_ODDS_TYPE`, `PINNACLE_VERSION`, `PINNACLE_SPECIAL_VERSION` default `1`, `0`, `0`.
 - `FEED_TIMEOUT_MS` default `4000`; kratak timeout pomaze da Netlify Function vrati parcijalne podatke umesto 502 kada neki feed visi.
 
+## PS3838 read-only feed
+
+Realni Pinnacle/PS3838 API feed je pripremljen kao server-side zamena za postojeci `pinnacle` slot. Podrazumevano je iskljucen, tako da trenutni Pinnacle browser feed ostaje fallback dok se ne potvrde kredencijali i liga.
+
+```text
+PS3838_ENABLED=false
+PS3838_API_BASE=https://api.ps3838.com
+PS3838_USERNAME=
+PS3838_PASSWORD=
+PS3838_SPORT_ID=29
+PS3838_LEAGUE_IDS=
+PS3838_ODDS_FORMAT=Decimal
+PS3838_IS_LIVE=false
+FEED_TIMEOUT_MS=8000
+PS3838_CACHE_MS=30000
+```
+
+Kada `PS3838_ENABLED=true`, server koristi `GET /v3/fixtures` i `GET /v4/odds` uz Basic auth i normalizuje podatke u isti `pinnacle` oblik. Ako `/v4/odds` vrati 404, proba se `/v3/odds`. `PS3838_USERNAME` i `PS3838_PASSWORD` se nikad ne salju browseru. `PS3838_LEAGUE_IDS` treba popuniti comma-separated World Cup league ID vrednostima pre ukljucivanja feeda.
+
+Za lokalnu proveru liga, posle unosa kredencijala pokreni server i otvori `http://localhost:3000/api/ps3838/leagues`. Taj discovery endpoint radi samo za localhost.
+
 ## No-vig kolona
 
 Prva kolona u tabeli je `Pinnacle no-vig`. Server uzima Pinnacle kvote i skida marginu Shin metodom za 1X2 i 2.5 golove. Ta kolona je referenca za bojenje kvota, nije kladionica i ne ulazi u racunanje najbolje kladionicarske kvote ili margine.

@@ -29,8 +29,11 @@ const state = {
   search: "",
   view: "all",
   noVigLimitPercent: 1,
+  oddsSnapshot: new Map(),
+  changedOddsUntil: new Map(),
 };
 const oddsRefreshMs = 30_000;
+const oddsPulseMs = 10_000;
 let isLoadingOdds = false;
 let nextRefreshAt = Date.now() + oddsRefreshMs;
 
@@ -56,6 +59,55 @@ const els = {
 function formatOdd(value) {
   if (value === null || value === undefined || value === "") return "-";
   return Number.isFinite(Number(value)) ? Number(value).toFixed(2) : "-";
+}
+
+function oddsChangeKey(matchKey, bookmakerId, outcome) {
+  return `${matchKey}|${bookmakerId}|${outcome}`;
+}
+
+function oddsSnapshotValue(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 1 ? numeric.toFixed(3) : null;
+}
+
+function collectOddsSnapshot(data) {
+  const snapshot = new Map();
+  for (const match of data?.matches || []) {
+    for (const [bookmakerId, entry] of Object.entries(match.bookmakers || {})) {
+      for (const outcome of todayOutcomes) {
+        const value = oddsSnapshotValue(outcomeValue(entry, outcome));
+        if (value) snapshot.set(oddsChangeKey(match.matchKey, bookmakerId, outcome), value);
+      }
+    }
+  }
+  return snapshot;
+}
+
+function trackChangedOdds(previousSnapshot, nextSnapshot) {
+  const now = Date.now();
+  for (const [key, value] of nextSnapshot.entries()) {
+    const previousValue = previousSnapshot.get(key);
+    if (previousValue && previousValue !== value) {
+      state.changedOddsUntil.set(key, now + oddsPulseMs);
+    }
+  }
+
+  for (const [key, expiresAt] of state.changedOddsUntil.entries()) {
+    if (expiresAt <= now) state.changedOddsUntil.delete(key);
+  }
+
+  state.oddsSnapshot = nextSnapshot;
+}
+
+function isOddPulsing(matchKey, bookmakerId, outcome) {
+  const key = oddsChangeKey(matchKey, bookmakerId, outcome);
+  const expiresAt = state.changedOddsUntil.get(key);
+  if (!expiresAt) return false;
+  if (expiresAt <= Date.now()) {
+    state.changedOddsUntil.delete(key);
+    return false;
+  }
+  return true;
 }
 
 function formatTime(value) {
@@ -104,6 +156,7 @@ async function loadOdds() {
   renderRefreshCountdown();
   setLoading(true);
   try {
+    const previousSnapshot = state.oddsSnapshot;
     const response = await fetch("/api/odds", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     state.data = await response.json();
@@ -112,6 +165,7 @@ async function loadOdds() {
     } catch (error) {
       console.warn("Pinnacle browser fallback failed:", error);
     }
+    trackChangedOdds(previousSnapshot, collectOddsSnapshot(state.data));
     render();
   } catch (error) {
     els.resultNote.textContent = `Greska pri ucitavanju: ${error.message}`;
@@ -376,6 +430,8 @@ function normalizePinnacleOffer(event) {
 
 async function hydratePinnacleFromBrowser() {
   const pinnacleFeed = state.data?.feeds?.find((feed) => feed.bookmakerId === "pinnacle");
+  if (pinnacleFeed?.source === "ps3838") return;
+
   const hasPinnacleOdds = (state.data?.matches || []).some((match) =>
     matchWinnerOutcomes.some((outcome) => isValidOdd(match.bookmakers?.pinnacle?.odds?.[outcome])),
   );
@@ -607,7 +663,8 @@ function renderRows(matches) {
                 ? highlight || (isBest ? "best" : isLowest ? "lowest" : "")
                 : "missing";
               const boundaryClass = index === 0 ? "group-start" : index === outcomes.length - 1 ? "group-end" : "";
-              const className = ["odd-cell", stateClass, boundaryClass].filter(Boolean).join(" ");
+              const pulseClass = isOddPulsing(match.matchKey, bookmakerId, outcome) ? "is-changing" : "";
+              const className = ["odd-cell", stateClass, boundaryClass, pulseClass].filter(Boolean).join(" ");
               return `<td class="${className}">${formatOdd(value)}</td>`;
             })
             .join("");

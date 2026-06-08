@@ -32,6 +32,18 @@ const PINNACLE_LEAGUE_CODE = process.env.PINNACLE_LEAGUE_CODE || "fifa-world-cup
 const PINNACLE_USE_LEAGUES_LOOKUP = process.env.PINNACLE_USE_LEAGUES_LOOKUP === "true";
 const PINNACLE_PERIOD_NUM = process.env.PINNACLE_PERIOD_NUM || "-1";
 const PINNACLE_EVENT_TYPE = process.env.PINNACLE_EVENT_TYPE || "0";
+const PS3838_ENABLED = process.env.PS3838_ENABLED === "true";
+const PS3838_API_BASE = process.env.PS3838_API_BASE || "https://api.ps3838.com";
+const PS3838_USERNAME = process.env.PS3838_USERNAME || "";
+const PS3838_PASSWORD = process.env.PS3838_PASSWORD || "";
+const PS3838_SPORT_ID = Number(process.env.PS3838_SPORT_ID || 29);
+const PS3838_LEAGUE_IDS = String(process.env.PS3838_LEAGUE_IDS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const PS3838_ODDS_FORMAT = process.env.PS3838_ODDS_FORMAT || "Decimal";
+const PS3838_IS_LIVE = process.env.PS3838_IS_LIVE === "true";
+const PS3838_CACHE_MS = Number(process.env.PS3838_CACHE_MS || 30000);
 const SUPERBET_WORLD_CUP_TOURNAMENTS = [
   "1431",
   "1432",
@@ -82,7 +94,7 @@ const BOOKMAKERS = [
     id: "pinnacle",
     name: "Pinnacle",
     type: "pinnacle",
-    baseUrl: PINNACLE_API_BASE,
+    baseUrl: PS3838_ENABLED ? PS3838_API_BASE : PINNACLE_API_BASE,
     sourceOfTruth: true,
   },
   {
@@ -142,6 +154,11 @@ const DISPLAY_BOOKMAKERS = [
   ...BOOKMAKERS.filter((bookmaker) => bookmaker.id !== "oddsapi"),
 ];
 const FEED_BOOKMAKERS = BOOKMAKERS.filter((bookmaker) => bookmaker.id !== "oddsapi");
+const ps3838Cache = {
+  expiresAt: 0,
+  promise: null,
+  result: null,
+};
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -315,6 +332,44 @@ function pinnacleLeagueOddsUrl(leagueCode = PINNACLE_LEAGUE_CODE) {
     isLive: "false",
     eventType: PINNACLE_EVENT_TYPE,
   });
+}
+
+function ps3838Url(pathname, params = {}) {
+  const url = new URL(pathname, PS3838_API_BASE.endsWith("/") ? PS3838_API_BASE : `${PS3838_API_BASE}/`);
+  const search = new URLSearchParams(params);
+  if (PS3838_LEAGUE_IDS.length && !search.has("leagueIds")) {
+    search.set("leagueIds", PS3838_LEAGUE_IDS.join(","));
+  }
+  url.search = search.toString();
+  return url.toString();
+}
+
+function ps3838FixturesUrl(extraParams = {}) {
+  return ps3838Url("v3/fixtures", {
+    sportId: String(PS3838_SPORT_ID),
+    ...extraParams,
+  });
+}
+
+function ps3838OddsUrl(version = "v4", extraParams = {}) {
+  return ps3838Url(`${version}/odds`, {
+    sportId: String(PS3838_SPORT_ID),
+    oddsFormat: PS3838_ODDS_FORMAT,
+    isLive: String(PS3838_IS_LIVE),
+    ...extraParams,
+  });
+}
+
+function ps3838LeaguesUrl() {
+  return ps3838Url("v3/leagues", { sportId: String(PS3838_SPORT_ID) });
+}
+
+function ps3838Headers() {
+  return {
+    accept: "application/json",
+    "user-agent": "sp-kvote/0.1",
+    authorization: `Basic ${Buffer.from(`${PS3838_USERNAME}:${PS3838_PASSWORD}`).toString("base64")}`,
+  };
 }
 
 function textIncludesWorldCup(value) {
@@ -837,6 +892,110 @@ function normalizePinnacleMatches(bookmaker, eventsPayload, leaguesPayload) {
     });
 }
 
+function getPs3838Leagues(payload) {
+  if (Array.isArray(payload?.leagues)) return payload.leagues;
+  if (Array.isArray(payload?.value)) return payload.value;
+  if (Array.isArray(payload)) return payload;
+  return [];
+}
+
+function getPs3838LeagueEvents(payload) {
+  return getPs3838Leagues(payload).flatMap((league) => {
+    const events = Array.isArray(league.events) ? league.events : [];
+    return events.map((event) => ({
+      ...event,
+      leagueId: event.leagueId || event.league?.id || league.id,
+      leagueName: event.leagueName || event.league?.name || league.name,
+    }));
+  });
+}
+
+function getPs3838EventId(event) {
+  return event.id || event.eventId || event.event_id;
+}
+
+function getPs3838FullGamePeriod(event) {
+  const periods = Array.isArray(event.periods) ? event.periods : [];
+  return (
+    periods.find((period) => Number(period.number) === 0) ||
+    periods.find((period) => String(period.description || "").toLocaleLowerCase("en-US").includes("match")) ||
+    periods[0] ||
+    {}
+  );
+}
+
+function getPs3838Moneyline(event) {
+  return getPs3838FullGamePeriod(event).moneyline || {};
+}
+
+function getPs3838Totals25(event) {
+  const totals = getPs3838FullGamePeriod(event).totals || [];
+  if (!Array.isArray(totals)) return emptyTotals25();
+
+  const total25 = totals.find((total) => lineIs25(total.points));
+  return {
+    over: normalizePinnaclePrice(total25?.over),
+    under: normalizePinnaclePrice(total25?.under),
+  };
+}
+
+function isPs3838WorldCupEvent(event) {
+  const hasLeagueFilter = PS3838_LEAGUE_IDS.length > 0;
+  const joined = [event.leagueName, event.home, event.away].join(" ");
+  return hasLeagueFilter || (textIncludesWorldCup(joined) && !textIncludesWomensCompetition(joined));
+}
+
+function isPs3838IncludedEvent(event) {
+  const status = String(event.status || "").toLocaleLowerCase("en-US");
+  const liveStatus = Number(event.liveStatus);
+  if (["settled", "cancelled", "canceled"].includes(status)) return false;
+  if (!PS3838_IS_LIVE && Number.isFinite(liveStatus) && liveStatus !== 0) return false;
+  return isPs3838WorldCupEvent(event);
+}
+
+function normalizePs3838Matches(bookmaker, fixturesPayload, oddsPayload) {
+  const fixturesById = new Map(
+    getPs3838LeagueEvents(fixturesPayload)
+      .filter(isPs3838IncludedEvent)
+      .map((event) => [String(getPs3838EventId(event)), event]),
+  );
+
+  return getPs3838LeagueEvents(oddsPayload)
+    .map((oddsEvent) => {
+      const eventId = getPs3838EventId(oddsEvent);
+      const fixture = fixturesById.get(String(eventId));
+      if (!fixture) return null;
+
+      const home = fixture.home || oddsEvent.home;
+      const away = fixture.away || oddsEvent.away;
+      const kickOffTime = fixture.starts || oddsEvent.starts;
+      if (!home || !away || !kickOffTime) return null;
+
+      const moneyline = getPs3838Moneyline(oddsEvent);
+      return {
+        bookmakerId: bookmaker.id,
+        bookmakerName: bookmaker.name,
+        source: "ps3838",
+        matchKey: createMatchKey(home, away, kickOffTime),
+        externalId: eventId,
+        matchCode: fixture.rotNum || fixture.rotationNumber || null,
+        home: normalizeTeamName(home),
+        away: normalizeTeamName(away),
+        leagueName: normalizeCompetitionName(fixture.leagueName || oddsEvent.leagueName),
+        leagueGroup: String(fixture.leagueId || oddsEvent.leagueId || ""),
+        kickOffTime: toTimestamp(kickOffTime),
+        updatedAt: Date.now(),
+        odds: {
+          home: normalizePinnaclePrice(moneyline.home),
+          draw: normalizePinnaclePrice(moneyline.draw),
+          away: normalizePinnaclePrice(moneyline.away),
+        },
+        totals25: getPs3838Totals25(oddsEvent),
+      };
+    })
+    .filter(Boolean);
+}
+
 function normalizeTeamName(value) {
   const clean = String(value || "")
     .replace(/\s+/g, " ")
@@ -1016,6 +1175,25 @@ async function fetchPinnacleJson(url) {
   }
 }
 
+async function fetchPs3838Json(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: ps3838Headers() });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${text.slice(0, 180)}`);
+    }
+    return parseJsonPayload(text);
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error(`Request timed out after ${FEED_TIMEOUT_MS} ms.`);
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function getPinnacleWorldCupLeagueIds(leaguesPayload) {
   if (PINNACLE_LEAGUE_IDS.length) return PINNACLE_LEAGUE_IDS;
   return getPinnacleLeagues(leaguesPayload)
@@ -1113,6 +1291,103 @@ async function fetchSseSnapshot(url) {
   }
 }
 
+async function fetchPs3838Snapshot(bookmaker) {
+  const fixturesUrl = ps3838FixturesUrl();
+  const oddsUrl = ps3838OddsUrl("v4");
+  let resolvedOddsUrl = oddsUrl;
+
+  const [fixturesPayload, oddsPayload] = await Promise.all([
+    fetchPs3838Json(fixturesUrl),
+    fetchPs3838Json(oddsUrl).catch(async (error) => {
+      if (!String(error.message || "").startsWith("HTTP 404")) throw error;
+      resolvedOddsUrl = ps3838OddsUrl("v3");
+      return fetchPs3838Json(resolvedOddsUrl);
+    }),
+  ]);
+  const matches = normalizePs3838Matches(bookmaker, fixturesPayload, oddsPayload);
+  const worldCupFixtures = getPs3838LeagueEvents(fixturesPayload).filter(isPs3838IncludedEvent);
+
+  return {
+    bookmaker,
+    status: "ok",
+    url: resolvedOddsUrl,
+    matches,
+    fetchedAt: Date.now(),
+    totalMatches: getPs3838LeagueEvents(fixturesPayload).length,
+    worldCupMatches: worldCupFixtures.length,
+    matchedMatches: matches.length,
+    source: "ps3838",
+  };
+}
+
+async function getPs3838BookmakerFeed(bookmaker) {
+  const configuredUrl = PS3838_LEAGUE_IDS.length ? ps3838OddsUrl("v4") : ps3838LeaguesUrl();
+
+  if (!PS3838_USERNAME || !PS3838_PASSWORD) {
+    return {
+      bookmaker,
+      status: "configured",
+      url: configuredUrl,
+      matches: [],
+      message: "Set PS3838_USERNAME and PS3838_PASSWORD to enable authenticated PS3838 feed.",
+      source: "ps3838",
+    };
+  }
+
+  if (!PS3838_LEAGUE_IDS.length) {
+    return {
+      bookmaker,
+      status: "configured",
+      url: configuredUrl,
+      matches: [],
+      message: "Set PS3838_LEAGUE_IDS after confirming the World Cup league IDs.",
+      source: "ps3838",
+    };
+  }
+
+  const now = Date.now();
+  if (ps3838Cache.result && ps3838Cache.expiresAt > now) {
+    return {
+      ...ps3838Cache.result,
+      cached: true,
+      message: ps3838Cache.result.message || `Using cached PS3838 snapshot for ${PS3838_CACHE_MS} ms.`,
+    };
+  }
+
+  if (!ps3838Cache.promise) {
+    ps3838Cache.promise = fetchPs3838Snapshot(bookmaker)
+      .then((result) => {
+        ps3838Cache.result = result;
+        ps3838Cache.expiresAt = Date.now() + PS3838_CACHE_MS;
+        return result;
+      })
+      .finally(() => {
+        ps3838Cache.promise = null;
+      });
+  }
+
+  try {
+    return await ps3838Cache.promise;
+  } catch (error) {
+    if (ps3838Cache.result) {
+      return {
+        ...ps3838Cache.result,
+        cached: true,
+        message: `Using cached PS3838 snapshot. Latest refresh failed: ${error.message}`,
+      };
+    }
+
+    return {
+      bookmaker,
+      status: "error",
+      url: configuredUrl,
+      matches: [],
+      message: error.message,
+      source: "ps3838",
+    };
+  }
+}
+
 async function fetchBookmaker(bookmaker) {
   if (bookmaker.type === "oddsapi") {
     const eventsUrl = oddsApiEventsUrl();
@@ -1160,6 +1435,10 @@ async function fetchBookmaker(bookmaker) {
   }
 
   if (bookmaker.type === "pinnacle") {
+    if (PS3838_ENABLED) {
+      return getPs3838BookmakerFeed(bookmaker);
+    }
+
     let url = pinnacleLeagueOddsUrl(PINNACLE_LEAGUE_CODE);
 
     try {
@@ -1571,6 +1850,45 @@ function buildOpportunities(matches) {
     .slice(0, 8);
 }
 
+function isLocalRequest(req) {
+  const rawHost = String(req.headers.host || "");
+  const host = rawHost.startsWith("[") ? rawHost.slice(0, rawHost.indexOf("]") + 1) : rawHost.split(":")[0];
+  return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(host);
+}
+
+async function getPs3838LeaguesPayload() {
+  const url = ps3838LeaguesUrl();
+
+  if (!PS3838_USERNAME || !PS3838_PASSWORD) {
+    return {
+      status: "configured",
+      source: "ps3838",
+      url,
+      leagues: [],
+      message: "Set PS3838_USERNAME and PS3838_PASSWORD to inspect PS3838 leagues.",
+    };
+  }
+
+  const payload = await fetchPs3838Json(url);
+  const leagues = getPs3838Leagues(payload).map((league) => ({
+    id: league.id,
+    name: league.name || league.englishName,
+    sportId: league.sportId || PS3838_SPORT_ID,
+    eventCount: league.eventCount ?? league.totalEvents ?? null,
+    isWorldCupCandidate: textIncludesWorldCup([league.name, league.englishName].join(" ")),
+  }));
+
+  return {
+    status: "ok",
+    source: "ps3838",
+    url,
+    generatedAt: Date.now(),
+    totalLeagues: leagues.length,
+    candidates: leagues.filter((league) => league.isWorldCupCandidate),
+    leagues,
+  };
+}
+
 export async function getOddsPayload() {
   const startedAt = Date.now();
   const settled = await Promise.all(FEED_BOOKMAKERS.map(fetchBookmaker));
@@ -1591,6 +1909,8 @@ export async function getOddsPayload() {
       bookmakerName: result.bookmaker.name,
       status: result.status,
       url: result.url,
+      source: result.source || result.bookmaker.type,
+      cached: Boolean(result.cached),
       totalMatches: result.totalMatches || 0,
       worldCupMatches: result.worldCupMatches ?? result.matches.length,
       matchedMatches: result.matchedMatches ?? result.worldCupMatches ?? result.matches.length,
@@ -1616,6 +1936,15 @@ export function getHealthPayload() {
 
 async function handleOdds(req, res) {
   sendJson(res, 200, await getOddsPayload());
+}
+
+async function handlePs3838Leagues(req, res) {
+  if (!isLocalRequest(req)) {
+    sendJson(res, 403, { error: "PS3838 league discovery is only available from localhost." });
+    return;
+  }
+
+  sendJson(res, 200, await getPs3838LeaguesPayload());
 }
 
 async function handleStatic(req, res) {
@@ -1648,6 +1977,11 @@ if (process.argv[1] && normalize(process.argv[1]) === normalize(join(projectDir,
 
       if (url.pathname === "/api/health") {
         sendJson(res, 200, getHealthPayload());
+        return;
+      }
+
+      if (url.pathname === "/api/ps3838/leagues") {
+        await handlePs3838Leagues(req, res);
         return;
       }
 
