@@ -9,6 +9,9 @@ const bookmakerOrder = [
 ];
 const primaryReferenceBookmaker = "pinnacle_shin";
 const fallbackReferenceBookmaker = "pinnacle";
+const pinnacleBrowserBase = "https://www.pinnacle888.com/sports-service/sv/euro";
+const pinnacleBrowserSportId = 29;
+const pinnacleBrowserLeagueCode = "fifa-world-cup";
 const matchWinnerOutcomes = ["home", "draw", "away"];
 const todayOutcomes = [...matchWinnerOutcomes, "over25", "under25"];
 const marketLabels = {
@@ -103,6 +106,11 @@ async function loadOdds() {
     const response = await fetch("/api/odds", { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     state.data = await response.json();
+    try {
+      await hydratePinnacleFromBrowser();
+    } catch (error) {
+      console.warn("Pinnacle browser fallback failed:", error);
+    }
     render();
   } catch (error) {
     els.resultNote.textContent = `Greska pri ucitavanju: ${error.message}`;
@@ -195,6 +203,236 @@ function outcomeBest(match, outcome) {
 function isValidOdd(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && numeric > 1;
+}
+
+function normalizeTeamName(value) {
+  const clean = String(value || "").replace(/\s+/g, " ").trim();
+  const canonical = clean
+    .toLocaleLowerCase("sr-RS")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, "and")
+    .replace(/\./g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const aliases = new Map([
+    ["usa", "United States"],
+    ["u s a", "United States"],
+    ["united states of america", "United States"],
+    ["korea republic", "South Korea"],
+    ["congo dr", "D.R. Congo"],
+    ["d r congo", "D.R. Congo"],
+    ["dr congo", "D.R. Congo"],
+    ["drc", "D.R. Congo"],
+    ["ivory coast", "Ivory Coast"],
+    ["cote divoire", "Ivory Coast"],
+  ]);
+  return aliases.get(canonical) || clean;
+}
+
+function simplifyTeam(value) {
+  return normalizeTeamName(value)
+    .toLocaleLowerCase("sr-RS")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function createMatchKey(home, away, kickOffTime) {
+  const timestamp = Number(kickOffTime);
+  const day = Number.isFinite(timestamp) ? new Date(timestamp).toISOString().slice(0, 10) : "unknown";
+  return `${day}:${simplifyTeam(home)}:${simplifyTeam(away)}`;
+}
+
+function normalizePrice(value) {
+  const numeric = Number(value);
+  return isValidOdd(numeric) ? Number(numeric.toFixed(3)) : null;
+}
+
+function getPinnacleEvents(payload) {
+  if (Array.isArray(payload?.events)) return payload.events;
+  if (Array.isArray(payload?.value)) return payload.value;
+  if (Array.isArray(payload)) return payload;
+  return (payload?.leagues || []).flatMap((league) =>
+    (league.events || []).map((event) => ({
+      ...event,
+      leagueName: event.leagueName || league.name,
+      leagueId: event.leagueId || league.id,
+    })),
+  );
+}
+
+function getPinnacleTeamNames(event) {
+  if (Array.isArray(event.participants)) {
+    const home = event.participants.find((item) =>
+      String(item.alignment || item.type || "").toLocaleLowerCase("en-US") === "home",
+    )?.name;
+    const away = event.participants.find((item) =>
+      String(item.alignment || item.type || "").toLocaleLowerCase("en-US") === "away",
+    )?.name;
+    if (home || away) return [home, away];
+  }
+  return [event.home || event.homeTeam || event.homeTeamName, event.away || event.awayTeam || event.awayTeamName];
+}
+
+function getPinnacleKickoff(event) {
+  return event.time || event.starts || event.startTime || event.startDate || event.eventDate || event.cutoffAt;
+}
+
+function getPinnacleMoneyline(event) {
+  if (event.prices || event.odds) return event.prices || event.odds;
+  if (event.periods && !Array.isArray(event.periods)) {
+    return event.periods["0"]?.moneyLine || event.periods[0]?.moneyLine || {};
+  }
+  const periods = Array.isArray(event.periods) ? event.periods : [];
+  const fullGame =
+    periods.find((period) => Number(period.number) === 0) ||
+    periods.find((period) => String(period.description || "").toLocaleLowerCase("en-US").includes("match")) ||
+    periods[0];
+  return fullGame?.moneyline || fullGame?.moneyLine || {};
+}
+
+function shinProbabilities(odds) {
+  const prices = odds.map((value) => Number(value));
+  if (prices.some((value) => !isValidOdd(value))) return null;
+  const inverseOdds = prices.map((value) => 1 / value);
+  const marketPercent = inverseOdds.reduce((sum, value) => sum + value, 0);
+  if (marketPercent <= 1) return inverseOdds.map((value) => value / marketPercent);
+
+  const shinSum = (z) =>
+    inverseOdds.reduce(
+      (sum, value) =>
+        sum +
+        (Math.sqrt(z * z + (4 * (1 - z) * value * value) / marketPercent) - z) / (2 * (1 - z)),
+      0,
+    );
+
+  let low = 0;
+  let high = 0.999999;
+  for (let index = 0; index < 80; index += 1) {
+    const mid = (low + high) / 2;
+    if (shinSum(mid) > 1) low = mid;
+    else high = mid;
+  }
+
+  const z = (low + high) / 2;
+  return inverseOdds.map(
+    (value) =>
+      (Math.sqrt(z * z + (4 * (1 - z) * value * value) / marketPercent) - z) / (2 * (1 - z)),
+  );
+}
+
+function shinNoVigOdds(values) {
+  const probabilities = shinProbabilities(values);
+  if (!probabilities) return values.map(() => null);
+  return probabilities.map((probability) =>
+    Number.isFinite(probability) && probability > 0 ? Number((1 / probability).toFixed(3)) : null,
+  );
+}
+
+function getBestOdds(bookmakers) {
+  const best = {};
+  for (const outcome of matchWinnerOutcomes) {
+    let top = { value: null, bookmakerId: null, bookmakerName: null };
+    for (const entry of Object.values(bookmakers || {})) {
+      if (entry.isReference) continue;
+      const value = Number(entry.odds?.[outcome]);
+      if (isValidOdd(value) && (!top.value || value > top.value)) {
+        top = { value, bookmakerId: entry.bookmakerId, bookmakerName: entry.bookmakerName };
+      }
+    }
+    best[outcome] = top;
+  }
+  return best;
+}
+
+function estimateBestMargin(bookmakers) {
+  const best = getBestOdds(bookmakers);
+  const values = [best.home.value, best.draw.value, best.away.value];
+  if (values.some((value) => !value)) return null;
+  return Number(((values.reduce((sum, value) => sum + 1 / value, 0) - 1) * 100).toFixed(2));
+}
+
+function normalizePinnacleOffer(event) {
+  const [home, away] = getPinnacleTeamNames(event);
+  const kickOffTime = Number(getPinnacleKickoff(event));
+  const moneyline = getPinnacleMoneyline(event);
+  return {
+    matchKey: createMatchKey(home, away, kickOffTime),
+    externalId: event.id || event.eventId || event.event_id,
+    odds: {
+      home: normalizePrice(moneyline.home ?? moneyline.homePrice),
+      draw: normalizePrice(moneyline.draw ?? moneyline.drawPrice),
+      away: normalizePrice(moneyline.away ?? moneyline.awayPrice),
+    },
+  };
+}
+
+async function hydratePinnacleFromBrowser() {
+  const pinnacleFeed = state.data?.feeds?.find((feed) => feed.bookmakerId === "pinnacle");
+  const hasPinnacleOdds = (state.data?.matches || []).some((match) =>
+    matchWinnerOutcomes.some((outcome) => isValidOdd(match.bookmakers?.pinnacle?.odds?.[outcome])),
+  );
+  if (!state.data || hasPinnacleOdds || pinnacleFeed?.status === "ok") return;
+
+  const params = new URLSearchParams({
+    sportId: String(pinnacleBrowserSportId),
+    oddsType: "1",
+    version: "0",
+    timeStamp: String(Date.now()),
+    periodNum: "-1",
+    eSportCode: "",
+    leagueCode: pinnacleBrowserLeagueCode,
+    isHlE: "true",
+    isLive: "false",
+    eventType: "0",
+    locale: "en_US",
+    _: String(Date.now()),
+    withCredentials: "true",
+  });
+
+  const response = await fetch(`${pinnacleBrowserBase}/odds/league?${params.toString()}`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Pinnacle browser fetch HTTP ${response.status}`);
+  const payload = await response.json();
+  const offers = new Map(getPinnacleEvents(payload).map((event) => {
+    const offer = normalizePinnacleOffer(event);
+    return [offer.matchKey, offer];
+  }));
+
+  for (const match of state.data.matches || []) {
+    const offer = offers.get(match.matchKey);
+    if (!offer) continue;
+    match.bookmakers.pinnacle = {
+      ...match.bookmakers.pinnacle,
+      bookmakerId: "pinnacle",
+      bookmakerName: "Pinnacle",
+      odds: offer.odds,
+      updatedAt: Date.now(),
+      externalId: offer.externalId,
+    };
+    const [home, draw, away] = shinNoVigOdds([offer.odds.home, offer.odds.draw, offer.odds.away]);
+    match.bookmakers.pinnacle_shin = {
+      ...match.bookmakers.pinnacle_shin,
+      bookmakerId: "pinnacle_shin",
+      bookmakerName: "Pinnacle no-vig",
+      isReference: true,
+      odds: { home, draw, away },
+      updatedAt: Date.now(),
+      externalId: offer.externalId,
+    };
+    match.best = getBestOdds(match.bookmakers);
+    match.margin = estimateBestMargin(match.bookmakers);
+  }
+
+  if (pinnacleFeed) {
+    pinnacleFeed.status = "ok";
+    pinnacleFeed.message = "Loaded in browser fallback.";
+    pinnacleFeed.worldCupMatches = offers.size;
+    pinnacleFeed.matchedMatches = state.data.matches.filter((match) =>
+      matchWinnerOutcomes.some((outcome) => isValidOdd(match.bookmakers?.pinnacle?.odds?.[outcome])),
+    ).length;
+  }
 }
 
 function lowestMarketOdd(match, bookmakerIds, outcome) {
