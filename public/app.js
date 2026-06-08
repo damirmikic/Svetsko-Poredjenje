@@ -192,6 +192,11 @@ function outcomeBest(match, outcome) {
   return match.best?.[outcome];
 }
 
+function isValidOdd(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 1;
+}
+
 function lowestMarketOdd(match, bookmakerIds, outcome) {
   return bookmakerIds
     .filter((bookmakerId) => ![primaryReferenceBookmaker].includes(bookmakerId))
@@ -199,7 +204,7 @@ function lowestMarketOdd(match, bookmakerIds, outcome) {
       bookmakerId,
       value: Number(outcomeValue(match.bookmakers?.[bookmakerId], outcome)),
     }))
-    .filter((item) => Number.isFinite(item.value))
+    .filter((item) => isValidOdd(item.value))
     .sort((a, b) => a.value - b.value)[0] || null;
 }
 
@@ -210,7 +215,7 @@ function favoriteMaxOdds(match) {
       outcome,
       value: Number(outcomeValue(reference, outcome)),
     }))
-    .filter((item) => Number.isFinite(item.value));
+    .filter((item) => isValidOdd(item.value));
 
   if (!candidates.length) return null;
 
@@ -228,14 +233,14 @@ function renderNoVigLimit() {
 
 function highlightClass(match, bookmakerId, outcome, value) {
   const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) return "";
+  if (!isValidOdd(numericValue)) return "";
   if ([primaryReferenceBookmaker, fallbackReferenceBookmaker].includes(bookmakerId)) return "";
 
   const pinnacleValue = Number(outcomeValue(match.bookmakers?.[fallbackReferenceBookmaker], outcome));
-  if (!Number.isFinite(pinnacleValue) || numericValue <= pinnacleValue) return "";
+  if (!isValidOdd(pinnacleValue) || numericValue <= pinnacleValue) return "";
 
   const noVigValue = Number(outcomeValue(match.bookmakers?.[primaryReferenceBookmaker], outcome));
-  if (!Number.isFinite(noVigValue)) return "above-reference";
+  if (!isValidOdd(noVigValue)) return "above-reference";
 
   return numericValue > noVigValue * (1 + state.noVigLimitPercent / 100)
     ? "above-both-references"

@@ -52,6 +52,7 @@ Opcioni parametri:
 - `PINNACLE_LOCALE` default `en_US`
 - `PINNACLE_LEAGUE_IDS` comma-separated lista liga; kada je prazno, server trazi World Cup ligu iz Pinnacle `leagues` feeda.
 - `PINNACLE_LEAGUE_CODE` default `fifa-world-cup` za `odds/league` endpoint.
+- `PINNACLE_USE_LEAGUES_LOOKUP` default `false`; na Netlify ostavi `false` jer Pinnacle `leagues` endpoint moze vratiti 403, dok direktni `odds/league` radi preko `PINNACLE_LEAGUE_CODE`.
 - `PINNACLE_ODDS_TYPE`, `PINNACLE_VERSION`, `PINNACLE_SPECIAL_VERSION` default `1`, `0`, `0`.
 - `FEED_TIMEOUT_MS` default `4000`; kratak timeout pomaze da Netlify Function vrati parcijalne podatke umesto 502 kada neki feed visi.
 

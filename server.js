@@ -29,6 +29,7 @@ const PINNACLE_ODDS_TYPE = process.env.PINNACLE_ODDS_TYPE || "1";
 const PINNACLE_VERSION = process.env.PINNACLE_VERSION || "0";
 const PINNACLE_SPECIAL_VERSION = process.env.PINNACLE_SPECIAL_VERSION || "0";
 const PINNACLE_LEAGUE_CODE = process.env.PINNACLE_LEAGUE_CODE || "fifa-world-cup";
+const PINNACLE_USE_LEAGUES_LOOKUP = process.env.PINNACLE_USE_LEAGUES_LOOKUP === "true";
 const PINNACLE_PERIOD_NUM = process.env.PINNACLE_PERIOD_NUM || "-1";
 const PINNACLE_EVENT_TYPE = process.env.PINNACLE_EVENT_TYPE || "0";
 const SUPERBET_WORLD_CUP_TOURNAMENTS = [
@@ -729,6 +730,11 @@ function normalizePinnaclePrice(value) {
   return Number(numeric.toFixed(3));
 }
 
+function isValidDecimalOdd(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 1;
+}
+
 function getPinnacleMoneyline(event) {
   if (event.prices || event.odds) return event.prices || event.odds;
   if (event.periods && !Array.isArray(event.periods)) {
@@ -1154,33 +1160,38 @@ async function fetchBookmaker(bookmaker) {
   }
 
   if (bookmaker.type === "pinnacle") {
-    const leaguesUrl = pinnacleLeaguesUrl();
+    let url = pinnacleLeagueOddsUrl(PINNACLE_LEAGUE_CODE);
 
     try {
-      const leaguesPayload = await fetchPinnacleJson(leaguesUrl);
-      const leagueIds = getPinnacleWorldCupLeagueIds(leaguesPayload);
-      const worldCupLeague = getPinnacleLeagues(leaguesPayload).find((league) =>
-        leagueIds.includes(String(league.id)),
-      );
+      if (PINNACLE_USE_LEAGUES_LOOKUP) {
+        const leaguesUrl = pinnacleLeaguesUrl();
+        url = leaguesUrl;
+        const leaguesPayload = await fetchPinnacleJson(leaguesUrl);
+        const leagueIds = getPinnacleWorldCupLeagueIds(leaguesPayload);
+        const worldCupLeague = getPinnacleLeagues(leaguesPayload).find((league) =>
+          leagueIds.includes(String(league.id)),
+        );
 
-      if (!leagueIds.length) {
-        return {
-          bookmaker,
-          status: "configured",
-          url: leaguesUrl,
-          matches: [],
-          totalMatches: getPinnacleLeagues(leaguesPayload).length,
-          message: "Pinnacle leagues feed is enabled, but no World Cup league was found.",
-        };
+        if (!leagueIds.length) {
+          return {
+            bookmaker,
+            status: "configured",
+            url: leaguesUrl,
+            matches: [],
+            totalMatches: getPinnacleLeagues(leaguesPayload).length,
+            message: "Pinnacle leagues feed is enabled, but no World Cup league was found.",
+          };
+        }
+
+        url = pinnacleLeagueOddsUrl(worldCupLeague?.leagueCode || PINNACLE_LEAGUE_CODE);
       }
 
-      const oddsUrl = pinnacleLeagueOddsUrl(worldCupLeague?.leagueCode || PINNACLE_LEAGUE_CODE);
-      const oddsPayload = await fetchPinnacleJson(oddsUrl);
+      const oddsPayload = await fetchPinnacleJson(url);
       const matches = normalizePinnacleMatches(bookmaker, oddsPayload, oddsPayload);
       return {
         bookmaker,
         status: "ok",
-        url: oddsUrl,
+        url,
         matches,
         fetchedAt: Date.now(),
         totalMatches: getPinnacleEvents(oddsPayload).length,
@@ -1189,7 +1200,7 @@ async function fetchBookmaker(bookmaker) {
       return {
         bookmaker,
         status: "error",
-        url: leaguesUrl,
+        url,
         matches: [],
         message: error.message,
       };
@@ -1480,7 +1491,7 @@ function getBestOdds(bookmakers) {
     for (const entry of Object.values(bookmakers)) {
       if (entry.isReference) continue;
       const value = entry.odds?.[outcome];
-      if (Number.isFinite(Number(value)) && (!top.value || Number(value) > top.value)) {
+      if (isValidDecimalOdd(value) && (!top.value || Number(value) > top.value)) {
         top = {
           value: Number(value),
           bookmakerId: entry.bookmakerId,
@@ -1506,7 +1517,7 @@ function getBestTotals25(bookmakers) {
     for (const entry of Object.values(bookmakers)) {
       if (entry.isReference) continue;
       const value = entry.totals25?.[field];
-      if (Number.isFinite(Number(value)) && (!top.value || Number(value) > top.value)) {
+      if (isValidDecimalOdd(value) && (!top.value || Number(value) > top.value)) {
         top = {
           value: Number(value),
           bookmakerId: entry.bookmakerId,
