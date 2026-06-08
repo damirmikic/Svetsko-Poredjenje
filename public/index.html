@@ -18,13 +18,14 @@
         </div>
         <div class="topbar-controls">
           <div class="segmented" aria-label="Market">
-            <button class="active" type="button">1X2</button>
-            <button type="button">Pobednik</button>
-            <button type="button">Grupe</button>
+            <button class="active" type="button" data-view="all">1X2</button>
+            <button type="button" data-view="today">Danasnji mecevi</button>
+            <button type="button" data-view="groups">Grupe</button>
           </div>
           <button class="refresh-button" id="refreshButton" type="button">
             <span class="refresh-icon" aria-hidden="true"></span>
-            Osvezi
+            <span>Osvezi</span>
+            <span class="refresh-countdown" id="refreshCountdown">30s</span>
           </button>
         </div>
       </header>
@@ -59,6 +60,17 @@
               <input id="searchInput" placeholder="Tim, liga, datum" type="search" />
             </label>
           </section>
+
+          <section>
+            <h2>Max kvota</h2>
+            <label class="range-control">
+              <span>
+                Iznad no-vig
+                <strong id="noVigLimitValue">1.0%</strong>
+              </span>
+              <input id="noVigLimitInput" min="0" max="10" step="0.1" type="range" value="1" />
+            </label>
+          </section>
         </aside>
 
         <section class="main-panel">
@@ -83,11 +95,13 @@
 
           <div class="table-toolbar">
             <div>
-              <h2>World Cup 2026 - 1X2 kvote</h2>
+              <h2 id="tableTitle">World Cup 2026 - 1X2 kvote</h2>
               <p id="resultNote">Ucitavanje feedova...</p>
             </div>
             <div class="legend">
               <span><i class="best-dot"></i> najbolja kvota</span>
+              <span><i class="reference-dot"></i> vise od Pinnacle, do zadatog praga</span>
+              <span><i class="alert-dot"></i> preko zadatog praga</span>
               <span><i class="missing-dot"></i> nema podatka</span>
             </div>
           </div>
@@ -100,17 +114,6 @@
           </div>
         </section>
 
-        <aside class="signal-panel" aria-label="Signali">
-          <section>
-            <h2>Best value</h2>
-            <div id="opportunities" class="opportunity-list"></div>
-          </section>
-
-          <section>
-            <h2>Status feedova</h2>
-            <div id="feedStatus" class="feed-status"></div>
-          </section>
-        </aside>
       </main>
     </div>
 

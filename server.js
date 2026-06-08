@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,9 +7,30 @@ import { fileURLToPath } from "node:url";
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const publicDir = join(__dirname, "public");
 
+loadLocalEnv();
+
 const PORT = Number(process.env.PORT || 3000);
 const DUALSOFT_VERSION = process.env.DUALSOFT_VERSION || "2.44.3.18";
 const LOCALE = "sr";
+const ODDS_API_BASE = process.env.ODDS_API_BASE || "https://api.odds-api.io/v3";
+const ODDS_API_KEY = process.env.ODDS_API_KEY || "";
+const ODDS_API_SPORT = process.env.ODDS_API_SPORT || "football";
+const ODDS_API_WORLD_CUP_LEAGUE = process.env.ODDS_API_WORLD_CUP_LEAGUE || "international-world-cup";
+const ODDS_API_BOOKMAKERS = "Orbit Exchange";
+const PINNACLE_API_BASE =
+  process.env.PINNACLE_API_BASE || "https://www.pinnacle888.com/sports-service/sv/euro";
+const PINNACLE_SPORT_ID = Number(process.env.PINNACLE_SPORT_ID || 29);
+const PINNACLE_LOCALE = process.env.PINNACLE_LOCALE || "en_US";
+const PINNACLE_LEAGUE_IDS = String(process.env.PINNACLE_LEAGUE_IDS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const PINNACLE_ODDS_TYPE = process.env.PINNACLE_ODDS_TYPE || "1";
+const PINNACLE_VERSION = process.env.PINNACLE_VERSION || "0";
+const PINNACLE_SPECIAL_VERSION = process.env.PINNACLE_SPECIAL_VERSION || "0";
+const PINNACLE_LEAGUE_CODE = process.env.PINNACLE_LEAGUE_CODE || "fifa-world-cup";
+const PINNACLE_PERIOD_NUM = process.env.PINNACLE_PERIOD_NUM || "-1";
+const PINNACLE_EVENT_TYPE = process.env.PINNACLE_EVENT_TYPE || "0";
 const SUPERBET_WORLD_CUP_TOURNAMENTS = [
   "1431",
   "1432",
@@ -37,7 +59,31 @@ const WORLD_CUP_TERMS = [
   "worldcup",
 ];
 
+const WOMENS_COMPETITION_TERMS = [
+  " women",
+  " womens",
+  " zene",
+  " zenska",
+  " zenski",
+  " zensko",
+  " w ",
+];
+
 const BOOKMAKERS = [
+  {
+    id: "oddsapi",
+    name: "Odds-API.io",
+    type: "oddsapi",
+    baseUrl: ODDS_API_BASE,
+    sourceOfTruth: true,
+  },
+  {
+    id: "pinnacle",
+    name: "Pinnacle",
+    type: "pinnacle",
+    baseUrl: PINNACLE_API_BASE,
+    sourceOfTruth: true,
+  },
   {
     id: "merkurxtip",
     name: "MerkurXtip",
@@ -63,12 +109,6 @@ const BOOKMAKERS = [
     baseUrl: "https://production-superbet-offer-rs.freetls.fastly.net/sb-rs/api/v3/subscription",
   },
   {
-    id: "mozzart",
-    name: "Mozzart",
-    type: "configured",
-    baseUrl: "https://betting-publisher-rs.mozzartio.com/betting-publisher/ws-broker",
-  },
-  {
     id: "balkanbet",
     name: "BalkanBet",
     type: "nsoft",
@@ -78,6 +118,30 @@ const BOOKMAKERS = [
   },
 ];
 
+const ODDS_API_DISPLAY_BOOKMAKERS = ODDS_API_BOOKMAKERS.split(",")
+  .map((name) => name.trim())
+  .filter(Boolean)
+  .map((name) => ({
+    id: oddsApiBookmakerId(name),
+    name,
+    type: "oddsapi-bookmaker",
+    baseUrl: ODDS_API_BASE,
+  }));
+
+const PINNACLE_SHIN_BOOKMAKER = {
+  id: "pinnacle_shin",
+  name: "Pinnacle no-vig",
+  type: "reference",
+  baseUrl: PINNACLE_API_BASE,
+  isReference: true,
+};
+
+const DISPLAY_BOOKMAKERS = [
+  PINNACLE_SHIN_BOOKMAKER,
+  ...BOOKMAKERS.filter((bookmaker) => bookmaker.id !== "oddsapi"),
+];
+const FEED_BOOKMAKERS = BOOKMAKERS.filter((bookmaker) => bookmaker.id !== "oddsapi");
+
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -85,6 +149,30 @@ const contentTypes = {
   ".json": "application/json; charset=utf-8",
   ".svg": "image/svg+xml",
 };
+
+function loadLocalEnv() {
+  const envPath = join(__dirname, ".env");
+  if (!existsSync(envPath)) return;
+
+  const lines = readFileSync(envPath, "utf8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+
+    const separatorIndex = trimmed.indexOf("=");
+    if (separatorIndex <= 0) continue;
+
+    const key = trimmed.slice(0, separatorIndex).trim();
+    const value = trimmed
+      .slice(separatorIndex + 1)
+      .trim()
+      .replace(/^["']|["']$/g, "");
+
+    if (!(key in process.env)) {
+      process.env[key] = value;
+    }
+  }
+}
 
 function sendJson(res, status, payload) {
   const body = JSON.stringify(payload);
@@ -150,9 +238,98 @@ function superbetWorldCupUrl(bookmaker) {
   return `${bookmaker.baseUrl}/sr-Latn-RS/prematch?${params.toString()}`;
 }
 
+function oddsApiUrl(pathname, params = {}) {
+  const url = new URL(pathname, ODDS_API_BASE.endsWith("/") ? ODDS_API_BASE : `${ODDS_API_BASE}/`);
+  const search = new URLSearchParams(params);
+  if (ODDS_API_KEY) search.set("apiKey", ODDS_API_KEY);
+  url.search = search.toString();
+  return url.toString();
+}
+
+function maskApiKeyUrl(url) {
+  const clean = new URL(url);
+  if (clean.searchParams.has("apiKey")) clean.searchParams.set("apiKey", "***");
+  return clean.toString();
+}
+
+function oddsApiEventsUrl() {
+  return oddsApiUrl("events", {
+    sport: ODDS_API_SPORT,
+    league: ODDS_API_WORLD_CUP_LEAGUE,
+    status: "pending,live",
+  });
+}
+
+function oddsApiMultiOddsUrl(eventIds) {
+  return oddsApiUrl("odds/multi", {
+    eventIds: eventIds.join(","),
+    bookmakers: ODDS_API_BOOKMAKERS,
+  });
+}
+
+function chunkArray(items, size) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function oddsApiBookmakerId(name) {
+  return `oddsapi_${String(name || "")
+    .toLocaleLowerCase("en-US")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")}`;
+}
+
+function pinnacleUrl(pathname, params = {}) {
+  const url = new URL(pathname, PINNACLE_API_BASE.endsWith("/") ? PINNACLE_API_BASE : `${PINNACLE_API_BASE}/`);
+  const search = new URLSearchParams(params);
+  search.set("locale", PINNACLE_LOCALE);
+  search.set("_", String(Date.now()));
+  search.set("withCredentials", "true");
+
+  if (PINNACLE_LEAGUE_IDS.length && !search.has("leagueIds")) {
+    search.set("leagueIds", PINNACLE_LEAGUE_IDS.join(","));
+  }
+
+  url.search = search.toString();
+  return url.toString();
+}
+
+function pinnacleLeaguesUrl() {
+  return pinnacleUrl("leagues", { sportId: String(PINNACLE_SPORT_ID) });
+}
+
+function pinnacleLeagueOddsUrl(leagueCode = PINNACLE_LEAGUE_CODE) {
+  return pinnacleUrl("odds/league", {
+    sportId: String(PINNACLE_SPORT_ID),
+    oddsType: PINNACLE_ODDS_TYPE,
+    version: PINNACLE_VERSION,
+    timeStamp: String(Date.now()),
+    periodNum: PINNACLE_PERIOD_NUM,
+    eSportCode: "",
+    leagueCode,
+    isHlE: "true",
+    isLive: "false",
+    eventType: PINNACLE_EVENT_TYPE,
+  });
+}
+
 function textIncludesWorldCup(value) {
   const haystack = String(value || "").toLocaleLowerCase("sr-RS");
   return WORLD_CUP_TERMS.some((term) => haystack.includes(term));
+}
+
+function textIncludesWomensCompetition(value) {
+  const normalized = ` ${String(value || "")
+    .toLocaleLowerCase("sr-RS")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()} `;
+
+  return WOMENS_COMPETITION_TERMS.some((term) => normalized.includes(term));
 }
 
 function isWorldCupMatch(match) {
@@ -164,7 +341,18 @@ function isWorldCupMatch(match) {
     match.away,
   ].join(" ");
 
-  return textIncludesWorldCup(joined);
+  return textIncludesWorldCup(joined) && !textIncludesWomensCompetition(joined);
+}
+
+function isOddsApiWorldCupEvent(event) {
+  const joined = [
+    event.league?.name,
+    event.league?.slug,
+    event.home,
+    event.away,
+  ].join(" ");
+
+  return textIncludesWorldCup(joined) && !textIncludesWomensCompetition(joined);
 }
 
 function getDualsoftOdd(match, code) {
@@ -181,6 +369,94 @@ function getDualsoftOdd(match, code) {
   }
 
   return null;
+}
+
+function emptyTotals25() {
+  return { over: null, under: null };
+}
+
+function normalizePrice(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 1 ? Number(numeric.toFixed(3)) : null;
+}
+
+function lineIs25(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && Math.abs(numeric - 2.5) < 0.001;
+}
+
+function textLooksOver(value) {
+  const text = String(value || "").toLocaleLowerCase("en-US");
+  return /\bover\b|\bo\b|vise|preko|3\+/.test(text);
+}
+
+function textLooksUnder(value) {
+  const text = String(value || "").toLocaleLowerCase("en-US");
+  return /\bunder\b|\bu\b|manje|ispod|0-2/.test(text);
+}
+
+function totalLineFromObject(item) {
+  return item?.points ?? item?.point ?? item?.line ?? item?.handicap ?? item?.total ?? item?.value ?? item?.p;
+}
+
+function priceFromObject(item) {
+  return item?.price ?? item?.odds ?? item?.decimal ?? item?.value ?? item?.g ?? item?.ov;
+}
+
+function sidePriceFromObject(value) {
+  return value && typeof value === "object" ? priceFromObject(value) : value;
+}
+
+function getOutcomeName(item) {
+  return [item?.name, item?.label, item?.selection, item?.type, item?.side, item?.e, item?.metadata?.name]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function totals25FromLines(lines) {
+  const totals = emptyTotals25();
+  if (!Array.isArray(lines)) return totals;
+
+  for (const line of lines) {
+    const lineValue = totalLineFromObject(line);
+    const nestedOutcomes = line?.outcomes || line?.prices || line?.odds || line?.h;
+
+    if (lineIs25(lineValue)) {
+      totals.over ||= normalizePrice(sidePriceFromObject(line.over ?? line.overPrice ?? line.o));
+      totals.under ||= normalizePrice(sidePriceFromObject(line.under ?? line.underPrice ?? line.u));
+    }
+
+    if (Array.isArray(nestedOutcomes)) {
+      for (const outcome of nestedOutcomes) {
+        const outcomeLine = totalLineFromObject(outcome) ?? lineValue;
+        if (!lineIs25(outcomeLine)) continue;
+
+        const name = getOutcomeName(outcome);
+        const price = normalizePrice(priceFromObject(outcome));
+        if (textLooksOver(name)) totals.over ||= price;
+        if (textLooksUnder(name)) totals.under ||= price;
+      }
+    }
+  }
+
+  return totals;
+}
+
+function totals25FromLineObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return totals25FromLines(value);
+  return totals25FromLines(
+    Object.entries(value).map(([line, item]) =>
+      item && typeof item === "object" ? { line, ...item } : { line, value: item },
+    ),
+  );
+}
+
+function mergeTotals25(...items) {
+  return items.reduce((merged, item) => {
+    merged.over ||= item?.over || null;
+    merged.under ||= item?.under || null;
+    return merged;
+  }, emptyTotals25());
 }
 
 function normalizeDualsoftMatches(bookmaker, payload) {
@@ -204,6 +480,7 @@ function normalizeDualsoftMatches(bookmaker, payload) {
       draw: getDualsoftOdd(match, "2"),
       away: getDualsoftOdd(match, "3"),
     },
+    totals25: totals25FromLines(Object.values(match.betMap || {}).flatMap((item) => Object.values(item || {}))),
   }));
 }
 
@@ -229,11 +506,22 @@ function getNsoftOdd(event, shortcut) {
   return Number.isFinite(Number(outcome?.g)) ? Number(outcome.g) : null;
 }
 
+function getNsoftTotals25(event) {
+  const markets = Object.values(event.o || {}).filter((market) =>
+    /total|goals|gol|ukupno|2\.5|0-2|3\+/i.test([market.n, market.d, market.m, market.e].filter(Boolean).join(" ")),
+  );
+  return totals25FromLines(markets.flatMap((market) => market.h || []));
+}
+
 function normalizeNsoftMatches(bookmaker, payload) {
   const events = Array.isArray(payload?.data?.events) ? payload.data.events : [];
 
   return events
-    .filter((event) => Number(event.f) === Number(bookmaker.tournamentId) || textIncludesWorldCup(event.g))
+    .filter(
+      (event) =>
+        (Number(event.f) === Number(bookmaker.tournamentId) || textIncludesWorldCup(event.g)) &&
+        !textIncludesWomensCompetition([event.g, event.j, Object.values(event.p || {}).map((item) => item.d).join(" ")].join(" ")),
+    )
     .map((event) => {
       const [home, away] = getNsoftTeamNames(event);
       return {
@@ -254,6 +542,7 @@ function normalizeNsoftMatches(bookmaker, payload) {
           draw: getNsoftOdd(event, "X"),
           away: getNsoftOdd(event, "2"),
         },
+        totals25: getNsoftTotals25(event),
       };
     });
 }
@@ -288,11 +577,24 @@ function getSuperbetOdd(event, shortcut) {
   return Number.isFinite(Number(outcome?.price)) ? Number(outcome.price) : null;
 }
 
+function getSuperbetTotals25(event) {
+  const markets = (event.markets || []).filter((market) =>
+    /total|goals|gol|ukupno|2\.5/i.test([market.name, market.description, market.metadata?.name].filter(Boolean).join(" ")),
+  );
+  return totals25FromLines(markets.flatMap((market) => market.odds || []));
+}
+
 function normalizeSuperbetMatches(bookmaker, payload) {
   const events = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
 
   return events
-    .filter((event) => SUPERBET_WORLD_CUP_TOURNAMENTS.includes(String(event.fixture?.tournament_id)))
+    .filter((event) => {
+      const [home, away] = getSuperbetTeamNames(event);
+      return (
+        SUPERBET_WORLD_CUP_TOURNAMENTS.includes(String(event.fixture?.tournament_id)) &&
+        !textIncludesWomensCompetition([event.fixture?.tournament_name, home, away].join(" "))
+      );
+    })
     .map((event) => {
       const [home, away] = getSuperbetTeamNames(event);
       const kickOffTime = event.fixture?.utc_date || event.fixture?.unix_date_millis;
@@ -315,6 +617,216 @@ function normalizeSuperbetMatches(bookmaker, payload) {
           draw: getSuperbetOdd(event, "X"),
           away: getSuperbetOdd(event, "2"),
         },
+        totals25: getSuperbetTotals25(event),
+      };
+    });
+}
+
+function getOddsApiMlMarket(event, bookmakerName) {
+  const markets = event.bookmakers?.[bookmakerName] || [];
+  return (Array.isArray(markets) ? markets : []).find(
+    (market) => String(market.name || "").toLocaleLowerCase("en-US") === "ml",
+  );
+}
+
+function getOddsApiMlOdds(event, bookmakerName) {
+  const market = getOddsApiMlMarket(event, bookmakerName);
+  const line = market?.odds?.[0] || {};
+
+  return {
+    home: normalizeOddsApiPrice(line.home),
+    draw: normalizeOddsApiPrice(line.draw),
+    away: normalizeOddsApiPrice(line.away),
+  };
+}
+
+function getOddsApiTotals25(event, bookmakerName) {
+  const markets = event.bookmakers?.[bookmakerName] || [];
+  const totalMarkets = (Array.isArray(markets) ? markets : []).filter((market) =>
+    /^(ou|total|totals)$/i.test(String(market.name || "")),
+  );
+  return mergeTotals25(...totalMarkets.map((market) => totals25FromLines(market.odds || market.outcomes || [])));
+}
+
+function normalizeOddsApiPrice(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 1 ? numeric : null;
+}
+
+function normalizeOddsApiMatches(bookmaker, eventsPayload, oddsPayload) {
+  const eventsById = new Map(
+    (Array.isArray(eventsPayload) ? eventsPayload : [])
+      .filter(isOddsApiWorldCupEvent)
+      .map((event) => [String(event.id), event]),
+  );
+  const oddsEvents = Array.isArray(oddsPayload) ? oddsPayload : [];
+
+  return Array.from(eventsById.values()).flatMap((event) => {
+    const oddsEvent = oddsEvents.find((item) => String(item.id) === String(event.id)) || {};
+    return ODDS_API_DISPLAY_BOOKMAKERS.map((displayBookmaker) => {
+      const mlMarket = getOddsApiMlMarket(oddsEvent, displayBookmaker.name);
+      const updatedAt = mlMarket?.updatedAt ? new Date(mlMarket.updatedAt).getTime() : Date.now();
+
+      return {
+        bookmakerId: displayBookmaker.id,
+        bookmakerName: displayBookmaker.name,
+        source: bookmaker.type,
+        matchKey: createMatchKey(event.home, event.away, event.date),
+        externalId: event.id,
+        matchCode: event.id,
+        home: normalizeTeamName(event.home),
+        away: normalizeTeamName(event.away),
+        leagueName: normalizeCompetitionName(event.league?.name || "World Cup 2026"),
+        leagueGroup: String(event.league?.slug || ""),
+        kickOffTime: toTimestamp(event.date),
+        updatedAt,
+        odds: getOddsApiMlOdds(oddsEvent, displayBookmaker.name),
+        totals25: getOddsApiTotals25(oddsEvent, displayBookmaker.name),
+      };
+    });
+  });
+}
+
+function getPinnacleLeagues(payload) {
+  if (Array.isArray(payload?.value)) return payload.value;
+  if (Array.isArray(payload?.leagues)) return payload.leagues;
+  if (Array.isArray(payload?.league)) return payload.league;
+  if (Array.isArray(payload)) return payload;
+  return [];
+}
+
+function getPinnacleEvents(payload) {
+  if (payload?.normal) {
+    return [
+      {
+        ...payload.normal,
+        info: payload.info,
+        leagueId: payload.info?.leagueId,
+        leagueName: payload.info?.leagueName,
+      },
+    ];
+  }
+  if (Array.isArray(payload?.value)) return payload.value;
+  if (Array.isArray(payload?.events)) return payload.events;
+  if (Array.isArray(payload?.matchups)) return payload.matchups;
+  return getPinnacleLeagues(payload).flatMap((league) => {
+    const events = Array.isArray(league.events) ? league.events : [];
+    return events.map((event) => ({
+      ...event,
+      leagueId: event.leagueId || league.id,
+      leagueName: event.leagueName || league.name,
+    }));
+  });
+}
+
+function getPinnacleEventId(event) {
+  return event.id || event.eventId || event.event_id;
+}
+
+function normalizePinnaclePrice(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 1) return null;
+  return Number(numeric.toFixed(3));
+}
+
+function getPinnacleMoneyline(event) {
+  if (event.prices || event.odds) return event.prices || event.odds;
+  if (event.periods && !Array.isArray(event.periods)) {
+    return event.periods["0"]?.moneyLine || event.periods[0]?.moneyLine || {};
+  }
+  const periods = Array.isArray(event.periods) ? event.periods : [];
+  const fullGame =
+    periods.find((period) => Number(period.number) === 0) ||
+    periods.find((period) => String(period.description || "").toLocaleLowerCase("en-US").includes("match")) ||
+    periods[0];
+  return fullGame?.moneyline || fullGame?.moneyLine || {};
+}
+
+function getPinnacleTotals25(event) {
+  const directTotals = event.totals || event.totalPoints || event.overUnder;
+  if (directTotals) return Array.isArray(directTotals) ? totals25FromLines(directTotals) : totals25FromLineObject(directTotals);
+
+  if (event.periods && !Array.isArray(event.periods)) {
+    const period = event.periods["0"] || event.periods[0] || {};
+    const totals = period.totals || period.totalPoints || period.overUnder;
+    return Array.isArray(totals) ? totals25FromLines(totals) : totals25FromLineObject(totals);
+  }
+
+  const periods = Array.isArray(event.periods) ? event.periods : [];
+  const fullGame =
+    periods.find((period) => Number(period.number) === 0) ||
+    periods.find((period) => String(period.description || "").toLocaleLowerCase("en-US").includes("match")) ||
+    periods[0] ||
+    {};
+  const totals = fullGame.totals || fullGame.totalPoints || fullGame.overUnder;
+  return Array.isArray(totals) ? totals25FromLines(totals) : totals25FromLineObject(totals);
+}
+
+function getPinnacleTeamNames(event) {
+  if (Array.isArray(event.participants)) {
+    const home = event.participants.find(
+      (item) =>
+        String(item.alignment || item.type || "").toLocaleLowerCase("en-US") === "home",
+    )?.name;
+    const away = event.participants.find(
+      (item) =>
+        String(item.alignment || item.type || "").toLocaleLowerCase("en-US") === "away",
+    )?.name;
+    if (home || away) return [home, away];
+  }
+
+  return [event.home || event.homeTeam || event.homeTeamName, event.away || event.awayTeam || event.awayTeamName];
+}
+
+function getPinnacleKickoff(event) {
+  return event.time || event.starts || event.startTime || event.startDate || event.eventDate || event.cutoffAt;
+}
+
+function normalizePinnacleMatches(bookmaker, eventsPayload, leaguesPayload) {
+  const leaguesById = new Map(getPinnacleLeagues(leaguesPayload).map((league) => [String(league.id), league]));
+
+  return getPinnacleEvents(eventsPayload)
+    .filter((event) => {
+      const status = String(event.status || "").toLocaleLowerCase("en-US");
+      const hasLeagueFilter = PINNACLE_LEAGUE_IDS.length > 0;
+      const league = leaguesById.get(String(event.leagueId || event.league?.id));
+      const leagueName = event.leagueName || event.league?.name || league?.name || league?.englishName;
+      const [home, away] = getPinnacleTeamNames(event);
+      const isWorldCup = hasLeagueFilter || textIncludesWorldCup([leagueName, home, away].join(" "));
+      return (
+        isWorldCup &&
+        !textIncludesWomensCompetition([leagueName, home, away].join(" ")) &&
+        !["settled", "cancelled", "canceled"].includes(status)
+      );
+    })
+    .map((event) => {
+      const eventId = getPinnacleEventId(event);
+      const league = leaguesById.get(String(event.leagueId || event.league?.id));
+      const leagueName =
+        event.leagueName || event.info?.leagueName || event.league?.name || league?.name || league?.englishName;
+      const [home, away] = getPinnacleTeamNames(event);
+      const moneyline = getPinnacleMoneyline(event);
+      const kickOffTime = getPinnacleKickoff(event);
+
+      return {
+        bookmakerId: bookmaker.id,
+        bookmakerName: bookmaker.name,
+        source: bookmaker.type,
+        matchKey: createMatchKey(home, away, kickOffTime),
+        externalId: eventId,
+        matchCode: event.rotationNumber || event.rotNum || null,
+        home: normalizeTeamName(home),
+        away: normalizeTeamName(away),
+        leagueName: normalizeCompetitionName(leagueName),
+        leagueGroup: String(event.leagueId || event.league?.id || ""),
+        kickOffTime: toTimestamp(kickOffTime),
+        updatedAt: Date.now(),
+        odds: {
+          home: normalizePinnaclePrice(moneyline.home ?? moneyline.homePrice),
+          draw: normalizePinnaclePrice(moneyline.draw ?? moneyline.drawPrice),
+          away: normalizePinnaclePrice(moneyline.away ?? moneyline.awayPrice),
+        },
+        totals25: getPinnacleTotals25(event),
       };
     });
 }
@@ -342,8 +854,20 @@ function normalizeTeamName(value) {
     ["ceska", "Czech Republic"],
     ["ceska r", "Czech Republic"],
     ["congo dr", "D.R. Congo"],
+    ["congo d r", "D.R. Congo"],
     ["d r congo", "D.R. Congo"],
+    ["dr congo", "D.R. Congo"],
+    ["democratic republic of congo", "D.R. Congo"],
+    ["dem republic of congo", "D.R. Congo"],
+    ["dem rep of congo", "D.R. Congo"],
+    ["dem rep congo", "D.R. Congo"],
+    ["drc", "D.R. Congo"],
+    ["d r c", "D.R. Congo"],
+    ["rd congo", "D.R. Congo"],
     ["dr kongo", "D.R. Congo"],
+    ["demokratska republika kongo", "D.R. Congo"],
+    ["demokratska rep kongo", "D.R. Congo"],
+    ["kongo dr", "D.R. Congo"],
     ["ir iran", "Iran"],
     ["korea republic", "South Korea"],
     ["juzna koreja", "South Korea"],
@@ -450,6 +974,41 @@ async function fetchJson(url) {
   }
 }
 
+function pinnacleHeaders() {
+  return {
+    accept: "application/json, text/plain, */*",
+    "accept-language": "en-US,en;q=0.9",
+    origin: "https://www.pinnacle888.com",
+    referer: "https://www.pinnacle888.com/",
+    "user-agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+  };
+}
+
+async function fetchPinnacleJson(url) {
+  const response = await fetch(url, { headers: pinnacleHeaders() });
+  const text = await response.text();
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${text.slice(0, 180)}`);
+  }
+  return parseJsonPayload(text);
+}
+
+function getPinnacleWorldCupLeagueIds(leaguesPayload) {
+  if (PINNACLE_LEAGUE_IDS.length) return PINNACLE_LEAGUE_IDS;
+  return getPinnacleLeagues(leaguesPayload)
+    .filter((league) => textIncludesWorldCup([league.name, league.englishName, league.leagueCode].join(" ")))
+    .map((league) => String(league.id))
+    .filter(Boolean);
+}
+
+function getPinnacleLeagueEventCount(leaguesPayload, leagueIds) {
+  const ids = new Set(leagueIds.map(String));
+  return getPinnacleLeagues(leaguesPayload)
+    .filter((league) => ids.has(String(league.id)))
+    .reduce((sum, league) => sum + Number(league.totalEvents || 0), 0);
+}
+
 function parseJsonPayload(text) {
   const clean = String(text || "").trim();
   if (!clean.startsWith("data:")) return JSON.parse(clean);
@@ -533,6 +1092,94 @@ async function fetchSseSnapshot(url) {
 }
 
 async function fetchBookmaker(bookmaker) {
+  if (bookmaker.type === "oddsapi") {
+    const eventsUrl = oddsApiEventsUrl();
+
+    if (!ODDS_API_KEY) {
+      return {
+        bookmaker,
+        status: "configured",
+        url: maskApiKeyUrl(eventsUrl),
+        matches: [],
+        message: "Set ODDS_API_KEY to enable Odds-API.io World Cup feed.",
+      };
+    }
+
+    try {
+      const eventsPayload = await fetchJson(eventsUrl);
+      const worldCupEvents = (Array.isArray(eventsPayload) ? eventsPayload : []).filter(isOddsApiWorldCupEvent);
+      const eventIds = worldCupEvents.map((event) => String(event.id)).filter(Boolean);
+      const oddsPayload = (
+        await Promise.all(
+          chunkArray(eventIds, 10).map((chunk) => fetchJson(oddsApiMultiOddsUrl(chunk))),
+        )
+      ).flat();
+      const matches = normalizeOddsApiMatches(bookmaker, worldCupEvents, oddsPayload);
+
+      return {
+        bookmaker,
+        status: "ok",
+        url: maskApiKeyUrl(eventsUrl),
+        matches,
+        fetchedAt: Date.now(),
+        totalMatches: Array.isArray(eventsPayload) ? eventsPayload.length : 0,
+        worldCupMatches: worldCupEvents.length,
+        matchedMatches: worldCupEvents.length,
+      };
+    } catch (error) {
+      return {
+        bookmaker,
+        status: "error",
+        url: maskApiKeyUrl(eventsUrl),
+        matches: [],
+        message: error.message,
+      };
+    }
+  }
+
+  if (bookmaker.type === "pinnacle") {
+    const leaguesUrl = pinnacleLeaguesUrl();
+
+    try {
+      const leaguesPayload = await fetchPinnacleJson(leaguesUrl);
+      const leagueIds = getPinnacleWorldCupLeagueIds(leaguesPayload);
+      const worldCupLeague = getPinnacleLeagues(leaguesPayload).find((league) =>
+        leagueIds.includes(String(league.id)),
+      );
+
+      if (!leagueIds.length) {
+        return {
+          bookmaker,
+          status: "configured",
+          url: leaguesUrl,
+          matches: [],
+          totalMatches: getPinnacleLeagues(leaguesPayload).length,
+          message: "Pinnacle leagues feed is enabled, but no World Cup league was found.",
+        };
+      }
+
+      const oddsUrl = pinnacleLeagueOddsUrl(worldCupLeague?.leagueCode || PINNACLE_LEAGUE_CODE);
+      const oddsPayload = await fetchPinnacleJson(oddsUrl);
+      const matches = normalizePinnacleMatches(bookmaker, oddsPayload, oddsPayload);
+      return {
+        bookmaker,
+        status: "ok",
+        url: oddsUrl,
+        matches,
+        fetchedAt: Date.now(),
+        totalMatches: getPinnacleEvents(oddsPayload).length,
+      };
+    } catch (error) {
+      return {
+        bookmaker,
+        status: "error",
+        url: leaguesUrl,
+        matches: [],
+        message: error.message,
+      };
+    }
+  }
+
   if (bookmaker.type === "dualsoft") {
     const url = dualsoftOfferUrl(bookmaker.baseUrl);
     try {
@@ -626,12 +1273,14 @@ async function fetchBookmaker(bookmaker) {
 
 function emptyBookmakerMap() {
   return Object.fromEntries(
-    BOOKMAKERS.map((bookmaker) => [
+    DISPLAY_BOOKMAKERS.map((bookmaker) => [
       bookmaker.id,
       {
         bookmakerId: bookmaker.id,
         bookmakerName: bookmaker.name,
+        isReference: Boolean(bookmaker.isReference),
         odds: { home: null, draw: null, away: null },
+        totals25: emptyTotals25(),
         updatedAt: null,
         externalId: null,
       },
@@ -639,43 +1288,170 @@ function emptyBookmakerMap() {
   );
 }
 
+function makeMatchRow(offer, truthSource = null) {
+  return {
+    matchKey: offer.matchKey,
+    home: offer.home,
+    away: offer.away,
+    leagueName: offer.leagueName,
+    kickOffTime: offer.kickOffTime,
+    sourceOfTruth: truthSource?.bookmakerId || null,
+    sourceExternalId: truthSource?.externalId || null,
+    bookmakers: emptyBookmakerMap(),
+  };
+}
+
+function attachOffer(row, offer) {
+  row.bookmakers[offer.bookmakerId] = {
+    bookmakerId: offer.bookmakerId,
+    bookmakerName: offer.bookmakerName,
+    isReference: Boolean(offer.isReference),
+    odds: offer.odds,
+    totals25: offer.totals25 || emptyTotals25(),
+    updatedAt: offer.updatedAt,
+    externalId: offer.externalId,
+  };
+}
+
+function findTruthRow(byMatch, offer) {
+  const exact = byMatch.get(offer.matchKey);
+  if (exact) return exact;
+
+  const offerHome = simplifyTeam(offer.home);
+  const offerAway = simplifyTeam(offer.away);
+  const offerTime = Number(offer.kickOffTime || 0);
+
+  for (const row of byMatch.values()) {
+    const sameTeams = simplifyTeam(row.home) === offerHome && simplifyTeam(row.away) === offerAway;
+    if (!sameTeams) continue;
+
+    const rowTime = Number(row.kickOffTime || 0);
+    if (!rowTime || !offerTime || Math.abs(rowTime - offerTime) <= 36 * 60 * 60 * 1000) {
+      return row;
+    }
+  }
+
+  return null;
+}
+
 function compareOdds(a, b) {
   return (Number(b || 0) - Number(a || 0)).toFixed(2);
 }
 
+function shinProbabilities(odds) {
+  const prices = odds.map((value) => Number(value));
+  if (prices.some((value) => !Number.isFinite(value) || value <= 1)) return null;
+
+  const inverseOdds = prices.map((value) => 1 / value);
+  const marketPercent = inverseOdds.reduce((sum, value) => sum + value, 0);
+  if (marketPercent <= 1) {
+    return inverseOdds.map((value) => value / marketPercent);
+  }
+
+  const shinSum = (z) =>
+    inverseOdds.reduce(
+      (sum, value) =>
+        sum +
+        (Math.sqrt(z * z + (4 * (1 - z) * value * value) / marketPercent) - z) /
+          (2 * (1 - z)),
+      0,
+    );
+
+  let low = 0;
+  let high = 0.999999;
+  for (let index = 0; index < 80; index += 1) {
+    const mid = (low + high) / 2;
+    if (shinSum(mid) > 1) low = mid;
+    else high = mid;
+  }
+
+  const z = (low + high) / 2;
+  return inverseOdds.map(
+    (value) =>
+      (Math.sqrt(z * z + (4 * (1 - z) * value * value) / marketPercent) - z) /
+      (2 * (1 - z)),
+  );
+}
+
+function shinNoVigOdds(values) {
+  const probabilities = shinProbabilities(values);
+  if (!probabilities) return values.map(() => null);
+  return probabilities.map((probability) =>
+    Number.isFinite(probability) && probability > 0 ? Number((1 / probability).toFixed(3)) : null,
+  );
+}
+
+function applyPinnacleShinNoVig(match) {
+  const pinnacle = match.bookmakers.pinnacle;
+  const [home, draw, away] = shinNoVigOdds([
+    pinnacle?.odds?.home,
+    pinnacle?.odds?.draw,
+    pinnacle?.odds?.away,
+  ]);
+  const [over, under] = shinNoVigOdds([
+    pinnacle?.totals25?.over,
+    pinnacle?.totals25?.under,
+  ]);
+
+  match.bookmakers[PINNACLE_SHIN_BOOKMAKER.id] = {
+    bookmakerId: PINNACLE_SHIN_BOOKMAKER.id,
+    bookmakerName: PINNACLE_SHIN_BOOKMAKER.name,
+    isReference: true,
+    odds: { home, draw, away },
+    totals25: { over, under },
+    updatedAt: pinnacle?.updatedAt || null,
+    externalId: pinnacle?.externalId || null,
+  };
+}
+
 function aggregateMatches(results) {
   const byMatch = new Map();
+  const truthResult = results.find((result) => result.bookmaker.sourceOfTruth && result.status === "ok" && result.matches.length);
 
-  for (const result of results) {
-    for (const offer of result.matches) {
-      if (!byMatch.has(offer.matchKey)) {
-        byMatch.set(offer.matchKey, {
-          matchKey: offer.matchKey,
-          home: offer.home,
-          away: offer.away,
-          leagueName: offer.leagueName,
-          kickOffTime: offer.kickOffTime,
-          bookmakers: emptyBookmakerMap(),
+  if (truthResult) {
+    for (const offer of truthResult.matches) {
+      const row =
+        byMatch.get(offer.matchKey) ||
+        makeMatchRow(offer, {
+          bookmakerId: truthResult.bookmaker.id,
+          externalId: offer.externalId,
         });
-      }
+      attachOffer(row, offer);
+      byMatch.set(offer.matchKey, row);
+    }
 
-      const row = byMatch.get(offer.matchKey);
-      row.bookmakers[offer.bookmakerId] = {
-        bookmakerId: offer.bookmakerId,
-        bookmakerName: offer.bookmakerName,
-        odds: offer.odds,
-        updatedAt: offer.updatedAt,
-        externalId: offer.externalId,
-      };
+    for (const result of results) {
+      if (result === truthResult) continue;
+      result.matchedMatches = 0;
+      for (const offer of result.matches) {
+        const row = findTruthRow(byMatch, offer);
+        if (!row) continue;
+        attachOffer(row, offer);
+        result.matchedMatches += 1;
+      }
+    }
+  } else {
+    for (const result of results) {
+      for (const offer of result.matches) {
+        if (!byMatch.has(offer.matchKey)) {
+          byMatch.set(offer.matchKey, makeMatchRow(offer));
+        }
+
+        attachOffer(byMatch.get(offer.matchKey), offer);
+      }
     }
   }
 
   return Array.from(byMatch.values())
-    .map((match) => ({
-      ...match,
-      best: getBestOdds(match.bookmakers),
-      margin: estimateBestMargin(match.bookmakers),
-    }))
+    .map((match) => {
+      applyPinnacleShinNoVig(match);
+      return {
+        ...match,
+        best: getBestOdds(match.bookmakers),
+        bestTotals25: getBestTotals25(match.bookmakers),
+        margin: estimateBestMargin(match.bookmakers),
+      };
+    })
     .sort((a, b) => Number(a.kickOffTime || 0) - Number(b.kickOffTime || 0));
 }
 
@@ -686,6 +1462,7 @@ function getBestOdds(bookmakers) {
   for (const outcome of outcomes) {
     let top = { value: null, bookmakerId: null, bookmakerName: null };
     for (const entry of Object.values(bookmakers)) {
+      if (entry.isReference) continue;
       const value = entry.odds?.[outcome];
       if (Number.isFinite(Number(value)) && (!top.value || Number(value) > top.value)) {
         top = {
@@ -696,6 +1473,32 @@ function getBestOdds(bookmakers) {
       }
     }
     best[outcome] = top;
+  }
+
+  return best;
+}
+
+function getBestTotals25(bookmakers) {
+  const outcomes = [
+    ["over", "over"],
+    ["under", "under"],
+  ];
+  const best = {};
+
+  for (const [key, field] of outcomes) {
+    let top = { value: null, bookmakerId: null, bookmakerName: null };
+    for (const entry of Object.values(bookmakers)) {
+      if (entry.isReference) continue;
+      const value = entry.totals25?.[field];
+      if (Number.isFinite(Number(value)) && (!top.value || Number(value) > top.value)) {
+        top = {
+          value: Number(value),
+          bookmakerId: entry.bookmakerId,
+          bookmakerName: entry.bookmakerName,
+        };
+      }
+    }
+    best[key] = top;
   }
 
   return best;
@@ -715,6 +1518,7 @@ function buildOpportunities(matches) {
       ["home", "draw", "away"].map((outcome) => {
         const best = match.best[outcome];
         const second = Object.values(match.bookmakers)
+          .filter((entry) => !entry.isReference)
           .map((entry) => Number(entry.odds?.[outcome]))
           .filter(Boolean)
           .sort((a, b) => b - a)[1];
@@ -742,20 +1546,27 @@ function buildOpportunities(matches) {
 
 async function handleOdds(req, res) {
   const startedAt = Date.now();
-  const settled = await Promise.all(BOOKMAKERS.map(fetchBookmaker));
+  const settled = await Promise.all(FEED_BOOKMAKERS.map(fetchBookmaker));
   const matches = aggregateMatches(settled);
 
   sendJson(res, 200, {
     generatedAt: Date.now(),
     elapsedMs: Date.now() - startedAt,
-    bookmakers: BOOKMAKERS.map(({ id, name, type, baseUrl }) => ({ id, name, type, baseUrl })),
+    bookmakers: DISPLAY_BOOKMAKERS.map(({ id, name, type, baseUrl, isReference }) => ({
+      id,
+      name,
+      type,
+      baseUrl,
+      isReference: Boolean(isReference),
+    })),
     feeds: settled.map((result) => ({
       bookmakerId: result.bookmaker.id,
       bookmakerName: result.bookmaker.name,
       status: result.status,
       url: result.url,
       totalMatches: result.totalMatches || 0,
-      worldCupMatches: result.matches.length,
+      worldCupMatches: result.worldCupMatches ?? result.matches.length,
+      matchedMatches: result.matchedMatches ?? result.worldCupMatches ?? result.matches.length,
       message: result.message || null,
     })),
     matches,
@@ -800,7 +1611,7 @@ const server = createServer(async (req, res) => {
     }
 
     if (url.pathname === "/api/health") {
-      sendJson(res, 200, { ok: true, bookmakers: BOOKMAKERS.length });
+      sendJson(res, 200, { ok: true, bookmakers: DISPLAY_BOOKMAKERS.length });
       return;
     }
 
