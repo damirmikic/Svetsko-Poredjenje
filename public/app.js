@@ -13,6 +13,7 @@ const pinnacleBrowserBase = "https://www.pinnacle888.com/sports-service/sv/euro"
 const pinnacleBrowserSportId = 29;
 const pinnacleBrowserLeagueCode = "fifa-world-cup";
 const matchWinnerOutcomes = ["home", "draw", "away"];
+const totalGoalsOutcomes = ["over25", "under25"];
 const todayOutcomes = [...matchWinnerOutcomes, "over25", "under25"];
 const marketLabels = {
   home: "1",
@@ -178,13 +179,14 @@ function renderView() {
   const titles = {
     all: "World Cup 2026 - 1X2 kvote",
     today: "Danasnji mecevi - 1X2 i golovi 2.5",
-    groups: "World Cup 2026 - Grupe",
+    goals: "World Cup 2026 - Golovi 2.5",
   };
   els.tableTitle.textContent = titles[state.view] || titles.all;
   els.oddsTable.classList.toggle("is-today", state.view === "today");
 }
 
 function activeOutcomes() {
+  if (state.view === "goals") return totalGoalsOutcomes;
   return state.view === "today" ? todayOutcomes : matchWinnerOutcomes;
 }
 
@@ -468,6 +470,40 @@ function favoriteMaxOdds(match) {
   };
 }
 
+function goalsMaxOdds(match) {
+  const candidates = totalGoalsOutcomes
+    .map((outcome) => ({
+      outcome,
+      value: Number(outcomeBest(match, outcome)?.value),
+    }))
+    .filter((item) => isValidOdd(item.value))
+    .sort((a, b) => b.value - a.value);
+
+  const top = candidates[0];
+  if (!top) return null;
+
+  return {
+    outcome: top.outcome,
+    label: marketLabels[top.outcome],
+    value: top.value,
+  };
+}
+
+function marketMaxOdds(match) {
+  return state.view === "goals" ? goalsMaxOdds(match) : favoriteMaxOdds(match);
+}
+
+function goalsMargin(match) {
+  const over = Number(match.bestTotals25?.over?.value);
+  const under = Number(match.bestTotals25?.under?.value);
+  if (!isValidOdd(over) || !isValidOdd(under)) return null;
+  return (1 / over + 1 / under - 1) * 100;
+}
+
+function marketMargin(match) {
+  return state.view === "goals" ? goalsMargin(match) : match.margin;
+}
+
 function renderNoVigLimit() {
   els.noVigLimitValue.textContent = `${state.noVigLimitPercent.toFixed(1)}%`;
 }
@@ -554,7 +590,8 @@ function renderRows(matches) {
 
   els.oddsBody.innerHTML = matches
     .map((match) => {
-      const maxOdds = favoriteMaxOdds(match);
+      const maxOdds = marketMaxOdds(match);
+      const margin = marketMargin(match);
       const oddsCells = enabled
         .map((bookmakerId) => {
           const entry = match.bookmakers[bookmakerId];
@@ -592,7 +629,7 @@ function renderRows(matches) {
             }
           </td>
           ${oddsCells}
-          <td class="margin-cell">${match.margin === null ? "-" : `${match.margin.toFixed(2)}%`}</td>
+          <td class="margin-cell">${margin === null ? "-" : `${margin.toFixed(2)}%`}</td>
         </tr>
       `;
     })
@@ -602,7 +639,7 @@ function renderRows(matches) {
 function renderSummary(matches) {
   const feeds = state.data?.feeds || [];
   const okFeeds = feeds.filter((feed) => feed.status === "ok").length;
-  const margins = matches.map((match) => match.margin).filter((value) => Number.isFinite(Number(value)));
+  const margins = matches.map((match) => marketMargin(match)).filter((value) => Number.isFinite(Number(value)));
   const bestMargin = margins.length ? Math.min(...margins) : null;
 
   els.matchesCount.textContent = String(matches.length);
@@ -613,7 +650,9 @@ function renderSummary(matches) {
     state.data?.filter?.note ||
     (state.view === "today"
       ? `${matches.length} danasnjih mec(eva), period do sutra u 07:00.`
-      : `${matches.length} World Cup mec(eva), ${state.data?.elapsedMs || 0} ms proxy vreme.`);
+      : state.view === "goals"
+        ? `${matches.length} World Cup mec(eva), golovi 2.5, ${state.data?.elapsedMs || 0} ms proxy vreme.`
+        : `${matches.length} World Cup mec(eva), ${state.data?.elapsedMs || 0} ms proxy vreme.`);
 }
 
 function render() {
