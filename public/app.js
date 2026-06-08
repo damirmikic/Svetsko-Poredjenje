@@ -19,8 +19,8 @@ const marketLabels = {
   home: "1",
   draw: "X",
   away: "2",
-  over25: "2.5+",
-  under25: "2.5-",
+  over25: "Over",
+  under25: "Under",
 };
 
 const state = {
@@ -59,6 +59,18 @@ const els = {
 function formatOdd(value) {
   if (value === null || value === undefined || value === "") return "-";
   return Number.isFinite(Number(value)) ? Number(value).toFixed(2) : "-";
+}
+
+function formatGoalsLine(line) {
+  const numeric = Number(line);
+  return Number.isFinite(numeric) ? numeric.toFixed(1) : "-";
+}
+
+function goalsOutcomeLabel(match, outcome) {
+  const line = formatGoalsLine(match?.goalsLine);
+  if (outcome === "over25") return `${line}+`;
+  if (outcome === "under25") return `${line}-`;
+  return marketLabels[outcome];
 }
 
 function oddsChangeKey(matchKey, bookmakerId, outcome) {
@@ -540,7 +552,7 @@ function goalsMaxOdds(match) {
 
   return {
     outcome: top.outcome,
-    label: marketLabels[top.outcome],
+    label: goalsOutcomeLabel(match, top.outcome),
     value: top.value,
   };
 }
@@ -676,7 +688,7 @@ function renderRows(matches) {
           <td class="match-cell">
             <span class="kickoff">${formatTime(match.kickOffTime)}</span>
             <strong>${match.home} <span>vs</span> ${match.away}</strong>
-            <small>${match.leagueName}</small>
+            <small>${match.leagueName}${match.goalsLine ? ` · golovi ${formatGoalsLine(match.goalsLine)}` : ""}</small>
           </td>
           <td class="max-cell">
             ${
@@ -708,7 +720,7 @@ function renderSummary(matches) {
     (state.view === "today"
       ? `${matches.length} danasnjih mec(eva), period do sutra u 07:00.`
       : state.view === "goals"
-        ? `${matches.length} World Cup mec(eva), golovi 2.5, ${state.data?.elapsedMs || 0} ms proxy vreme.`
+        ? `${matches.length} World Cup mec(eva), golovi 2.5 ili 3.5, ${state.data?.elapsedMs || 0} ms proxy vreme.`
         : `${matches.length} World Cup mec(eva), ${state.data?.elapsedMs || 0} ms proxy vreme.`);
 }
 

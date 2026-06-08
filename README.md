@@ -77,9 +77,13 @@ Kada `PS3838_ENABLED=true`, server koristi `GET /v3/fixtures` i `GET /v4/odds` u
 
 Za lokalnu proveru liga, posle unosa kredencijala pokreni server i otvori `http://localhost:3000/api/ps3838/leagues`. Taj discovery endpoint radi samo za localhost.
 
+## Golovi
+
+Prikaz golova prati Pinnacle liniju po mecu: prvo se koristi 2.5 ako Pinnacle ima over i under, a ako nema 2.5 pokusava se fallback na 3.5. Kladionice se porede samo na izabranoj liniji za taj mec.
+
 ## No-vig kolona
 
-Prva kolona u tabeli je `Pinnacle no-vig`. Server uzima Pinnacle kvote i skida marginu Shin metodom za 1X2 i 2.5 golove. Ta kolona je referenca za bojenje kvota, nije kladionica i ne ulazi u racunanje najbolje kladionicarske kvote ili margine.
+Prva kolona u tabeli je `Pinnacle no-vig`. Server uzima Pinnacle kvote i skida marginu Shin metodom za 1X2 i izabranu liniju golova. Ta kolona je referenca za bojenje kvota, nije kladionica i ne ulazi u racunanje najbolje kladionicarske kvote ili margine.
 
 Primer `.env`:
 
