@@ -16,11 +16,7 @@ const FEED_TIMEOUT_MS = Number(process.env.FEED_TIMEOUT_MS || (IS_NETLIFY ? 6000
 const SUPERBET_DETAIL_TIMEOUT_MS = Number(process.env.SUPERBET_DETAIL_TIMEOUT_MS || (IS_NETLIFY ? 5000 : Math.max(FEED_TIMEOUT_MS, 12000)));
 const SUPERBET_DETAIL_CHUNK_SIZE = Number(process.env.SUPERBET_DETAIL_CHUNK_SIZE || (IS_NETLIFY ? 50 : 1));
 const SUPERBET_SKIP_DETAIL = process.env.SUPERBET_SKIP_DETAIL === "true" || IS_NETLIFY;
-const ODDS_API_BASE = process.env.ODDS_API_BASE || "https://api.odds-api.io/v3";
-const ODDS_API_KEY = process.env.ODDS_API_KEY || "";
-const ODDS_API_SPORT = process.env.ODDS_API_SPORT || "football";
-const ODDS_API_WORLD_CUP_LEAGUE = process.env.ODDS_API_WORLD_CUP_LEAGUE || "international-world-cup";
-const ODDS_API_BOOKMAKERS = "Orbit Exchange";
+
 const PINNACLE_API_BASE =
   process.env.PINNACLE_API_BASE || "https://www.pinnacle888.com/sports-service/sv/euro";
 const PINNACLE_SPORT_ID = Number(process.env.PINNACLE_SPORT_ID || 29);
@@ -88,13 +84,6 @@ const WOMENS_COMPETITION_TERMS = [
 
 const BOOKMAKERS = [
   {
-    id: "oddsapi",
-    name: "Odds-API.io",
-    type: "oddsapi",
-    baseUrl: ODDS_API_BASE,
-    sourceOfTruth: true,
-  },
-  {
     id: "pinnacle",
     name: "Pinnacle",
     type: "pinnacle",
@@ -135,16 +124,6 @@ const BOOKMAKERS = [
   },
 ];
 
-const ODDS_API_DISPLAY_BOOKMAKERS = ODDS_API_BOOKMAKERS.split(",")
-  .map((name) => name.trim())
-  .filter(Boolean)
-  .map((name) => ({
-    id: oddsApiBookmakerId(name),
-    name,
-    type: "oddsapi-bookmaker",
-    baseUrl: ODDS_API_BASE,
-  }));
-
 const PINNACLE_SHIN_BOOKMAKER = {
   id: "pinnacle_shin",
   name: "Pinnacle no-vig",
@@ -153,11 +132,8 @@ const PINNACLE_SHIN_BOOKMAKER = {
   isReference: true,
 };
 
-const DISPLAY_BOOKMAKERS = [
-  PINNACLE_SHIN_BOOKMAKER,
-  ...BOOKMAKERS.filter((bookmaker) => bookmaker.id !== "oddsapi"),
-];
-const FEED_BOOKMAKERS = BOOKMAKERS.filter((bookmaker) => bookmaker.id !== "oddsapi");
+const DISPLAY_BOOKMAKERS = [PINNACLE_SHIN_BOOKMAKER, ...BOOKMAKERS];
+const FEED_BOOKMAKERS = BOOKMAKERS;
 const ps3838Cache = {
   expiresAt: 0,
   promise: null,
@@ -268,48 +244,12 @@ function superbetEventsUrl(bookmaker, eventIds) {
   return `${bookmaker.baseUrl}/sr-Latn-RS/events?${params.toString()}`;
 }
 
-function oddsApiUrl(pathname, params = {}) {
-  const url = new URL(pathname, ODDS_API_BASE.endsWith("/") ? ODDS_API_BASE : `${ODDS_API_BASE}/`);
-  const search = new URLSearchParams(params);
-  if (ODDS_API_KEY) search.set("apiKey", ODDS_API_KEY);
-  url.search = search.toString();
-  return url.toString();
-}
-
-function maskApiKeyUrl(url) {
-  const clean = new URL(url);
-  if (clean.searchParams.has("apiKey")) clean.searchParams.set("apiKey", "***");
-  return clean.toString();
-}
-
-function oddsApiEventsUrl() {
-  return oddsApiUrl("events", {
-    sport: ODDS_API_SPORT,
-    league: ODDS_API_WORLD_CUP_LEAGUE,
-    status: "pending,live",
-  });
-}
-
-function oddsApiMultiOddsUrl(eventIds) {
-  return oddsApiUrl("odds/multi", {
-    eventIds: eventIds.join(","),
-    bookmakers: ODDS_API_BOOKMAKERS,
-  });
-}
-
 function chunkArray(items, size) {
   const chunks = [];
   for (let index = 0; index < items.length; index += size) {
     chunks.push(items.slice(index, index + size));
   }
   return chunks;
-}
-
-function oddsApiBookmakerId(name) {
-  return `oddsapi_${String(name || "")
-    .toLocaleLowerCase("en-US")
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")}`;
 }
 
 function pinnacleUrl(pathname, params = {}) {
@@ -407,17 +347,6 @@ function isWorldCupMatch(match) {
     match.leagueGroupToken,
     match.home,
     match.away,
-  ].join(" ");
-
-  return textIncludesWorldCup(joined) && !textIncludesWomensCompetition(joined);
-}
-
-function isOddsApiWorldCupEvent(event) {
-  const joined = [
-    event.league?.name,
-    event.league?.slug,
-    event.home,
-    event.away,
   ].join(" ");
 
   return textIncludesWorldCup(joined) && !textIncludesWomensCompetition(joined);
@@ -829,75 +758,6 @@ function normalizeSuperbetMatches(bookmaker, payload) {
         totalsByLine: getSuperbetTotalsByLine(event),
       };
     });
-}
-
-function getOddsApiMlMarket(event, bookmakerName) {
-  const markets = event.bookmakers?.[bookmakerName] || [];
-  return (Array.isArray(markets) ? markets : []).find(
-    (market) => String(market.name || "").toLocaleLowerCase("en-US") === "ml",
-  );
-}
-
-function getOddsApiMlOdds(event, bookmakerName) {
-  const market = getOddsApiMlMarket(event, bookmakerName);
-  const line = market?.odds?.[0] || {};
-
-  return {
-    home: normalizeOddsApiPrice(line.home),
-    draw: normalizeOddsApiPrice(line.draw),
-    away: normalizeOddsApiPrice(line.away),
-  };
-}
-
-function getOddsApiTotals25(event, bookmakerName) {
-  return totalsForLine(getOddsApiTotalsByLine(event, bookmakerName), 2.5);
-}
-
-function getOddsApiTotalsByLine(event, bookmakerName) {
-  const markets = event.bookmakers?.[bookmakerName] || [];
-  const totalMarkets = (Array.isArray(markets) ? markets : []).filter((market) =>
-    /^(ou|total|totals)$/i.test(String(market.name || "")),
-  );
-  return mergeTotalsByLine(...totalMarkets.map((market) => totalsByLineFromLines(market.odds || market.outcomes || [])));
-}
-
-function normalizeOddsApiPrice(value) {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) && numeric > 1 ? numeric : null;
-}
-
-function normalizeOddsApiMatches(bookmaker, eventsPayload, oddsPayload) {
-  const eventsById = new Map(
-    (Array.isArray(eventsPayload) ? eventsPayload : [])
-      .filter(isOddsApiWorldCupEvent)
-      .map((event) => [String(event.id), event]),
-  );
-  const oddsEvents = Array.isArray(oddsPayload) ? oddsPayload : [];
-
-  return Array.from(eventsById.values()).flatMap((event) => {
-    const oddsEvent = oddsEvents.find((item) => String(item.id) === String(event.id)) || {};
-    return ODDS_API_DISPLAY_BOOKMAKERS.map((displayBookmaker) => {
-      const mlMarket = getOddsApiMlMarket(oddsEvent, displayBookmaker.name);
-      const updatedAt = mlMarket?.updatedAt ? new Date(mlMarket.updatedAt).getTime() : Date.now();
-
-      return {
-        bookmakerId: displayBookmaker.id,
-        bookmakerName: displayBookmaker.name,
-        source: bookmaker.type,
-        matchKey: createMatchKey(event.home, event.away, event.date),
-        externalId: event.id,
-        matchCode: event.id,
-        home: normalizeTeamName(event.home),
-        away: normalizeTeamName(event.away),
-        leagueName: normalizeCompetitionName(event.league?.name || "World Cup 2026"),
-        leagueGroup: String(event.league?.slug || ""),
-        kickOffTime: toTimestamp(event.date),
-        updatedAt,
-        odds: getOddsApiMlOdds(oddsEvent, displayBookmaker.name),
-        totalsByLine: getOddsApiTotalsByLine(oddsEvent, displayBookmaker.name),
-      };
-    });
-  });
 }
 
 function getPinnacleLeagues(payload) {
@@ -1592,51 +1452,6 @@ async function getPs3838BookmakerFeed(bookmaker) {
 }
 
 async function fetchBookmaker(bookmaker) {
-  if (bookmaker.type === "oddsapi") {
-    const eventsUrl = oddsApiEventsUrl();
-
-    if (!ODDS_API_KEY) {
-      return {
-        bookmaker,
-        status: "configured",
-        url: maskApiKeyUrl(eventsUrl),
-        matches: [],
-        message: "Set ODDS_API_KEY to enable Odds-API.io World Cup feed.",
-      };
-    }
-
-    try {
-      const eventsPayload = await fetchJson(eventsUrl);
-      const worldCupEvents = (Array.isArray(eventsPayload) ? eventsPayload : []).filter(isOddsApiWorldCupEvent);
-      const eventIds = worldCupEvents.map((event) => String(event.id)).filter(Boolean);
-      const oddsPayload = (
-        await Promise.all(
-          chunkArray(eventIds, 10).map((chunk) => fetchJson(oddsApiMultiOddsUrl(chunk))),
-        )
-      ).flat();
-      const matches = normalizeOddsApiMatches(bookmaker, worldCupEvents, oddsPayload);
-
-      return {
-        bookmaker,
-        status: "ok",
-        url: maskApiKeyUrl(eventsUrl),
-        matches,
-        fetchedAt: Date.now(),
-        totalMatches: Array.isArray(eventsPayload) ? eventsPayload.length : 0,
-        worldCupMatches: worldCupEvents.length,
-        matchedMatches: worldCupEvents.length,
-      };
-    } catch (error) {
-      return {
-        bookmaker,
-        status: "error",
-        url: maskApiKeyUrl(eventsUrl),
-        matches: [],
-        message: error.message,
-      };
-    }
-  }
-
   if (bookmaker.type === "pinnacle") {
     if (PS3838_ENABLED) {
       return getPs3838BookmakerFeed(bookmaker);
