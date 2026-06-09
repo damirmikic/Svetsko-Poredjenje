@@ -49,6 +49,8 @@ const els = {
   searchInput: document.querySelector("#searchInput"),
   noVigLimitInput: document.querySelector("#noVigLimitInput"),
   noVigLimitValue: document.querySelector("#noVigLimitValue"),
+  oddsThresholdInput: document.querySelector("#oddsThresholdInput"),
+  oddsThresholdValue: document.querySelector("#oddsThresholdValue"),
   matchesCount: document.querySelector("#matchesCount"),
   activeFeeds: document.querySelector("#activeFeeds"),
   bestMargin: document.querySelector("#bestMargin"),
@@ -99,6 +101,13 @@ function collectOddsSnapshot(data) {
     }
   }
   return snapshot;
+}
+
+function oddsMovePercent(oldValue, newValue) {
+  const previous = Number(oldValue);
+  const current = Number(newValue);
+  if (!isValidOdd(previous) || !isValidOdd(current)) return 0;
+  return Math.abs((current / previous - 1) * 100);
 }
 
 function getBookmakerName(bookmakerId) {
@@ -187,6 +196,8 @@ function trackChangedOdds(previousSnapshot, nextSnapshot) {
     const previousValue = previousSnapshot.get(key);
     if (previousValue && previousValue !== value) {
       state.changedOddsUntil.set(key, now + oddsPulseMs);
+      const movePercent = oddsMovePercent(previousValue, value);
+      if (movePercent < state.oddsThresholdPercent) continue;
 
       const parts = key.split("|");
       if (parts.length === 3) {
@@ -197,6 +208,7 @@ function trackChangedOdds(previousSnapshot, nextSnapshot) {
           outcome,
           oldValue: Number(previousValue),
           newValue: Number(value),
+          movePercent,
         });
       }
     }
@@ -682,6 +694,10 @@ function renderNoVigLimit() {
   els.noVigLimitValue.textContent = `${state.noVigLimitPercent.toFixed(1)}%`;
 }
 
+function renderOddsThreshold() {
+  els.oddsThresholdValue.textContent = `${state.oddsThresholdPercent.toFixed(1)}%`;
+}
+
 function highlightClass(match, bookmakerId, outcome, value) {
   const numericValue = Number(value);
   if (!isValidOdd(numericValue)) return "";
@@ -907,6 +923,7 @@ function render() {
   const matches = visibleMatches();
   renderView();
   renderNoVigLimit();
+  renderOddsThreshold();
   renderHead();
   renderRows(matches);
   renderSummary(matches);
@@ -922,6 +939,10 @@ els.searchInput.addEventListener("input", (event) => {
 els.noVigLimitInput.addEventListener("input", (event) => {
   state.noVigLimitPercent = Number(event.target.value) || 0;
   render();
+});
+els.oddsThresholdInput.addEventListener("input", (event) => {
+  state.oddsThresholdPercent = Number(event.target.value) || 0;
+  renderOddsThreshold();
 });
 els.viewButtons.forEach((button) => {
   button.addEventListener("click", () => {
