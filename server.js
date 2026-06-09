@@ -13,9 +13,7 @@ const DUALSOFT_VERSION = process.env.DUALSOFT_VERSION || "2.44.3.18";
 const LOCALE = "sr";
 const IS_NETLIFY = Boolean(process.env.NETLIFY);
 const FEED_TIMEOUT_MS = Number(process.env.FEED_TIMEOUT_MS || (IS_NETLIFY ? 6000 : 4000));
-const SUPERBET_DETAIL_TIMEOUT_MS = Number(process.env.SUPERBET_DETAIL_TIMEOUT_MS || (IS_NETLIFY ? 5000 : Math.max(FEED_TIMEOUT_MS, 12000)));
-const SUPERBET_DETAIL_CHUNK_SIZE = Number(process.env.SUPERBET_DETAIL_CHUNK_SIZE || (IS_NETLIFY ? 50 : 1));
-const SUPERBET_SKIP_DETAIL = process.env.SUPERBET_SKIP_DETAIL === "true" || IS_NETLIFY;
+
 
 const PINNACLE_API_BASE =
   process.env.PINNACLE_API_BASE || "https://www.pinnacle888.com/sports-service/sv/euro";
@@ -236,13 +234,7 @@ function superbetWorldCupUrl(bookmaker) {
   return `${bookmaker.baseUrl}/sr-Latn-RS/prematch?${params.toString()}`;
 }
 
-function superbetEventsUrl(bookmaker, eventIds) {
-  const params = new URLSearchParams({
-    events: eventIds.join(","),
-  });
 
-  return `${bookmaker.baseUrl}/sr-Latn-RS/events?${params.toString()}`;
-}
 
 function chunkArray(items, size) {
   const chunks = [];
@@ -677,50 +669,6 @@ function getSuperbetOdd(event, shortcut) {
   return Number.isFinite(Number(outcome?.price)) ? Number(outcome.price) : null;
 }
 
-function getSuperbetTotals25(event) {
-  return totalsForLine(getSuperbetTotalsByLine(event), 2.5);
-}
-
-function getSuperbetTotalsByLine(event) {
-  const totalsByLine = emptyTotalsByLine();
-  const goalsMarket = (event.markets || []).find((market) => Number(market.id) === 200734);
-
-  for (const odd of goalsMarket?.odds || []) {
-    if (Number(odd.status) !== 1 || odd.display === false) continue;
-
-    const line = odd.metadata?.specifiers?.total || odd.metadata?.special_bet_value;
-    const name = odd.metadata?.name;
-    const current = totalsByLine[String(normalizeGoalsLine(line))] || {
-      line: normalizeGoalsLine(line),
-      over: null,
-      under: null,
-    };
-
-    if (textLooksOver(name)) current.over ||= normalizePrice(odd.price);
-    if (textLooksUnder(name)) current.under ||= normalizePrice(odd.price);
-    setTotalsLine(totalsByLine, line, current);
-  }
-
-  return totalsByLine;
-}
-
-function mergeSuperbetDetailEvents(summaryEvents, detailEvents) {
-  const detailsById = new Map((Array.isArray(detailEvents) ? detailEvents : []).map((event) => [String(event.event_id), event]));
-
-  return (Array.isArray(summaryEvents) ? summaryEvents : []).map((event) => {
-    const detail = detailsById.get(String(event.event_id));
-    if (!detail) return event;
-    return {
-      ...event,
-      ...detail,
-      fixture: {
-        ...event.fixture,
-        ...detail.fixture,
-      },
-      markets: Array.isArray(detail.markets) && detail.markets.length ? detail.markets : event.markets,
-    };
-  });
-}
 
 function normalizeSuperbetMatches(bookmaker, payload) {
   const events = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
@@ -755,7 +703,7 @@ function normalizeSuperbetMatches(bookmaker, payload) {
           draw: getSuperbetOdd(event, "X"),
           away: getSuperbetOdd(event, "2"),
         },
-        totalsByLine: getSuperbetTotalsByLine(event),
+        totalsByLine: emptyTotalsByLine(),
       };
     });
 }
@@ -1342,17 +1290,6 @@ async function fetchSseSnapshot(url, timeoutMs = FEED_TIMEOUT_MS) {
   }
 }
 
-async function fetchSuperbetEventDetails(bookmaker, events) {
-  const eventIds = [...new Set((events || []).map((event) => event.event_id).filter(Boolean).map(String))];
-  if (!eventIds.length) return [];
-
-  const chunks = chunkArray(eventIds, SUPERBET_DETAIL_CHUNK_SIZE);
-  const settled = await Promise.allSettled(
-    chunks.map((chunk) => fetchSseSnapshot(superbetEventsUrl(bookmaker, chunk), SUPERBET_DETAIL_TIMEOUT_MS)),
-  );
-  const payloads = settled.filter((result) => result.status === "fulfilled").map((result) => result.value);
-  return payloads.flatMap((payload) => (Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : []));
-}
 
 async function fetchPs3838Snapshot(bookmaker) {
   const fixturesUrl = ps3838FixturesUrl();
@@ -1560,23 +1497,7 @@ async function fetchBookmaker(bookmaker) {
     try {
       const payload = await fetchSseSnapshot(url);
       const events = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
-      let detailMessage = null;
-      let detailEvents = [];
-
-      if (!SUPERBET_SKIP_DETAIL) {
-        detailEvents = await fetchSuperbetEventDetails(bookmaker, events).catch((error) => {
-          detailMessage = `Superbet detail markets failed: ${error.message}`;
-          return [];
-        });
-        if (!detailMessage && detailEvents.length < events.length) {
-          detailMessage = `Loaded Superbet detail markets for ${detailEvents.length}/${events.length} events.`;
-        }
-      } else {
-        detailMessage = "Superbet detail markets skipped (serverless mode).";
-      }
-
-      const mergedPayload = mergeSuperbetDetailEvents(events, detailEvents);
-      const matches = normalizeSuperbetMatches(bookmaker, mergedPayload);
+      const matches = normalizeSuperbetMatches(bookmaker, events);
       return {
         bookmaker,
         status: "ok",
@@ -1584,8 +1505,6 @@ async function fetchBookmaker(bookmaker) {
         matches,
         fetchedAt: Date.now(),
         totalMatches: events.length,
-        detailMatches: detailEvents.length,
-        message: detailMessage,
       };
     } catch (error) {
       return {
@@ -1597,6 +1516,7 @@ async function fetchBookmaker(bookmaker) {
       };
     }
   }
+
 
 
   if (bookmaker.type !== "dualsoft") {
