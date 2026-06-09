@@ -1659,6 +1659,17 @@ function chooseGoalsLine(match) {
   const pinnacleTotals = match.bookmakers.pinnacle?.totalsByLine || {};
   if (hasCompleteTotals(totalsForLine(pinnacleTotals, 2.5))) return 2.5;
   if (hasCompleteTotals(totalsForLine(pinnacleTotals, 3.5))) return 3.5;
+
+  for (const entry of Object.values(match.bookmakers)) {
+    if (entry.isReference) continue;
+    if (hasCompleteTotals(totalsForLine(entry.totalsByLine, 2.5))) return 2.5;
+  }
+
+  for (const entry of Object.values(match.bookmakers)) {
+    if (entry.isReference) continue;
+    if (hasCompleteTotals(totalsForLine(entry.totalsByLine, 3.5))) return 3.5;
+  }
+
   return null;
 }
 
