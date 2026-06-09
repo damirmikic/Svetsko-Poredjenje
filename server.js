@@ -1968,7 +1968,11 @@ function findTruthRow(byMatch, offer) {
   const offerTime = Number(offer.kickOffTime || 0);
 
   for (const row of byMatch.values()) {
-    const sameTeams = simplifyTeam(row.home) === offerHome && simplifyTeam(row.away) === offerAway;
+    const rowHome = simplifyTeam(row.home);
+    const rowAway = simplifyTeam(row.away);
+    const sameTeams =
+      (rowHome === offerHome && rowAway === offerAway) ||
+      (rowHome === offerAway && rowAway === offerHome);
     if (!sameTeams) continue;
 
     const rowTime = Number(row.kickOffTime || 0);
@@ -2104,18 +2108,48 @@ function aggregateMatches(results) {
       for (const offer of result.matches) {
         const row = findTruthRow(byMatch, offer);
         if (!row) continue;
-        attachOffer(row, offer);
+
+        const isReversed = simplifyTeam(row.home) === simplifyTeam(offer.away);
+        if (isReversed) {
+          const adjustedOffer = {
+            ...offer,
+            odds: offer.odds ? {
+              home: offer.odds.away,
+              draw: offer.odds.draw,
+              away: offer.odds.home,
+            } : { home: null, draw: null, away: null },
+          };
+          attachOffer(row, adjustedOffer);
+        } else {
+          attachOffer(row, offer);
+        }
         result.matchedMatches += 1;
       }
     }
   } else {
     for (const result of results) {
       for (const offer of result.matches) {
-        if (!byMatch.has(offer.matchKey)) {
-          byMatch.set(offer.matchKey, makeMatchRow(offer));
+        const row = findTruthRow(byMatch, offer);
+        if (row) {
+          const isReversed = simplifyTeam(row.home) === simplifyTeam(offer.away);
+          if (isReversed) {
+            const adjustedOffer = {
+              ...offer,
+              odds: offer.odds ? {
+                home: offer.odds.away,
+                draw: offer.odds.draw,
+                away: offer.odds.home,
+              } : { home: null, draw: null, away: null },
+            };
+            attachOffer(row, adjustedOffer);
+          } else {
+            attachOffer(row, offer);
+          }
+        } else {
+          const newRow = makeMatchRow(offer);
+          attachOffer(newRow, offer);
+          byMatch.set(offer.matchKey, newRow);
         }
-
-        attachOffer(byMatch.get(offer.matchKey), offer);
       }
     }
   }
