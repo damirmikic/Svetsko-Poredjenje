@@ -929,7 +929,7 @@ select,
   display: inline-block;
   white-space: nowrap;
   padding-left: 100%;
-  animation: ticker-animation 35s linear infinite;
+  animation: ticker-animation 70s linear infinite;
 }
 
 .ticker:hover {
