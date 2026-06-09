@@ -405,16 +405,6 @@ function normalizeGoalsLine(value) {
   return Number.isFinite(numeric) ? Number(numeric.toFixed(2)) : null;
 }
 
-function lineMatches(value, targetLine) {
-  const line = normalizeGoalsLine(value);
-  const target = normalizeGoalsLine(targetLine);
-  return line !== null && target !== null && Math.abs(line - target) < 0.001;
-}
-
-function lineIs25(value) {
-  return lineMatches(value, 2.5);
-}
-
 function textLooksOver(value) {
   const text = String(value || "")
     .toLocaleLowerCase("sr-RS")
@@ -979,15 +969,9 @@ function getPs3838Moneyline(event) {
   return getPs3838FullGamePeriod(event).moneyline || {};
 }
 
-function getPs3838Totals25(event) {
+function getPs3838TotalsByLine(event) {
   const totals = getPs3838FullGamePeriod(event).totals || [];
-  if (!Array.isArray(totals)) return emptyTotals25();
-
-  const total25 = totals.find((total) => lineIs25(total.points));
-  return {
-    over: normalizePinnaclePrice(total25?.over),
-    under: normalizePinnaclePrice(total25?.under),
-  };
+  return totalsByLineFromLines(totals);
 }
 
 function isPs3838WorldCupEvent(event) {
@@ -1023,6 +1007,7 @@ function normalizePs3838Matches(bookmaker, fixturesPayload, oddsPayload) {
       if (!home || !away || !kickOffTime) return null;
 
       const moneyline = getPs3838Moneyline(oddsEvent);
+      const totalsByLine = getPs3838TotalsByLine(oddsEvent);
       return {
         bookmakerId: bookmaker.id,
         bookmakerName: bookmaker.name,
@@ -1041,7 +1026,8 @@ function normalizePs3838Matches(bookmaker, fixturesPayload, oddsPayload) {
           draw: normalizePinnaclePrice(moneyline.draw),
           away: normalizePinnaclePrice(moneyline.away),
         },
-        totals25: getPs3838Totals25(oddsEvent),
+        totalsByLine,
+        totals25: totalsForLine(totalsByLine, 2.5),
       };
     })
     .filter(Boolean);
