@@ -560,7 +560,6 @@ function normalizePinnacleOffer(event) {
 
 async function hydratePinnacleFromBrowser() {
   const pinnacleFeed = state.data?.feeds?.find((feed) => feed.bookmakerId === "pinnacle");
-  if (pinnacleFeed?.source === "ps3838") return;
 
   const hasPinnacleOdds = (state.data?.matches || []).some((match) =>
     matchWinnerOutcomes.some((outcome) => isValidOdd(match.bookmakers?.pinnacle?.odds?.[outcome])),
