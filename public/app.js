@@ -35,6 +35,7 @@ const state = {
   oddsThresholdPercent: 3,
   oddsSnapshot: new Map(),
   changedOddsUntil: new Map(),
+  changedOddsDirection: new Map(),
 };
 const oddsRefreshMs = 30_000;
 const oddsPulseMs = 10_000;
@@ -251,6 +252,7 @@ function trackChangedOdds(previousSnapshot, nextSnapshot) {
     const previousValue = previousSnapshot.get(key);
     if (previousValue && previousValue !== value) {
       state.changedOddsUntil.set(key, now + oddsPulseMs);
+      state.changedOddsDirection.set(key, Number(value) > Number(previousValue) ? "up" : "down");
       const movePercent = oddsMovePercent(previousValue, value);
       if (movePercent < state.oddsThresholdPercent) continue;
 
@@ -270,7 +272,10 @@ function trackChangedOdds(previousSnapshot, nextSnapshot) {
   }
 
   for (const [key, expiresAt] of state.changedOddsUntil.entries()) {
-    if (expiresAt <= now) state.changedOddsUntil.delete(key);
+    if (expiresAt <= now) {
+      state.changedOddsUntil.delete(key);
+      state.changedOddsDirection.delete(key);
+    }
   }
 
   state.oddsSnapshot = nextSnapshot;
@@ -286,9 +291,15 @@ function isOddPulsing(matchKey, bookmakerId, outcome) {
   if (!expiresAt) return false;
   if (expiresAt <= Date.now()) {
     state.changedOddsUntil.delete(key);
+    state.changedOddsDirection.delete(key);
     return false;
   }
   return true;
+}
+
+function oddMoveDirection(matchKey, bookmakerId, outcome) {
+  if (!isOddPulsing(matchKey, bookmakerId, outcome)) return null;
+  return state.changedOddsDirection.get(oddsChangeKey(matchKey, bookmakerId, outcome)) || null;
 }
 
 function formatTime(value) {
@@ -1089,9 +1100,17 @@ function renderRows(matches) {
                 ? highlight || (isBest ? "best" : isLowest ? "lowest" : "")
                 : "missing";
               const boundaryClass = index === 0 ? "group-start" : index === outcomes.length - 1 ? "group-end" : "";
-              const pulseClass = isOddPulsing(match.matchKey, bookmakerId, outcome) ? "is-changing" : "";
-              const className = ["odd-cell", stateClass, boundaryClass, pulseClass].filter(Boolean).join(" ");
-              return `<td class="${className}">${formatOdd(value)}</td>`;
+              const moveDirection = oddMoveDirection(match.matchKey, bookmakerId, outcome);
+              const pulseClass = moveDirection ? "is-changing" : "";
+              const directionClass = moveDirection ? `move-${moveDirection}` : "";
+              const className = ["odd-cell", stateClass, boundaryClass, pulseClass, directionClass].filter(Boolean).join(" ");
+              const moveArrow =
+                moveDirection === "up"
+                  ? `<span class="odd-move-arrow" aria-label="Kvota raste">&uarr;</span>`
+                  : moveDirection === "down"
+                    ? `<span class="odd-move-arrow" aria-label="Kvota pada">&darr;</span>`
+                    : "";
+              return `<td class="${className}"><span class="odd-value">${formatOdd(value)}</span>${moveArrow}</td>`;
             })
             .join("");
         })

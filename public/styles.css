@@ -529,6 +529,27 @@ select,
   font-weight: 800;
   outline: 2px solid transparent;
   outline-offset: -2px;
+  white-space: nowrap;
+}
+
+.odd-value,
+.odd-move-arrow {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.odd-move-arrow {
+  margin-left: 3px;
+  font-size: 11px;
+  line-height: 1;
+}
+
+.odd-cell.move-up .odd-move-arrow {
+  color: var(--green);
+}
+
+.odd-cell.move-down .odd-move-arrow {
+  color: var(--red);
 }
 
 .odd-cell.group-start,
