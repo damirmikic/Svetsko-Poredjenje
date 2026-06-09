@@ -3,9 +3,12 @@ const bookmakerOrder = [
   "pinnacle",
   "merkurxtip",
   "maxbet",
+  "mozzartbet",
   "superbet",
   "balkanbet",
   "soccerbet",
+  "betinasia",
+  "betfair_lay",
 ];
 const primaryReferenceBookmaker = "pinnacle_shin";
 const fallbackReferenceBookmaker = "pinnacle";
@@ -408,6 +411,10 @@ function normalizeTeamName(value) {
     .replace(/\s+/g, " ")
     .trim();
   const aliases = new Map([
+    ["bih", "Bosnia and Herzegovina"],
+    ["bosnia and herzegovina", "Bosnia and Herzegovina"],
+    ["bosnia-herzegovina", "Bosnia and Herzegovina"],
+    ["bosna i hercegovina", "Bosnia and Herzegovina"],
     ["usa", "United States"],
     ["u s a", "United States"],
     ["united states of america", "United States"],
@@ -634,7 +641,7 @@ async function hydratePinnacleFromBrowser() {
 
 function lowestMarketOdd(match, bookmakerIds, outcome) {
   return bookmakerIds
-    .filter((bookmakerId) => ![primaryReferenceBookmaker].includes(bookmakerId))
+    .filter((bookmakerId) => ![primaryReferenceBookmaker, "betfair_lay"].includes(bookmakerId))
     .map((bookmakerId) => ({
       bookmakerId,
       value: Number(outcomeValue(match.bookmakers?.[bookmakerId], outcome)),
@@ -703,7 +710,7 @@ function renderNoVigLimit() {
 function highlightClass(match, bookmakerId, outcome, value) {
   const numericValue = Number(value);
   if (!isValidOdd(numericValue)) return "";
-  if ([primaryReferenceBookmaker, fallbackReferenceBookmaker].includes(bookmakerId)) return "";
+  if ([primaryReferenceBookmaker, fallbackReferenceBookmaker, "betfair_lay"].includes(bookmakerId)) return "";
 
   const pinnacleValue = Number(outcomeValue(match.bookmakers?.[fallbackReferenceBookmaker], outcome));
   if (!isValidOdd(pinnacleValue) || numericValue <= pinnacleValue) return "";
@@ -787,13 +794,14 @@ function renderRows(matches) {
       const oddsCells = enabled
         .map((bookmakerId) => {
           const entry = match.bookmakers[bookmakerId];
+          const isRef = entry?.isReference || bookmakerId === "betfair_lay" || bookmakerId === "pinnacle_shin";
           return outcomes
             .map((outcome, index) => {
               const value = outcomeValue(entry, outcome);
               const best = outcomeBest(match, outcome);
-              const isBest = best?.bookmakerId === bookmakerId && Number(best.value) === Number(value);
+              const isBest = !isRef && best?.bookmakerId === bookmakerId && Number(best.value) === Number(value);
               const lowest = lowestMarketOdd(match, enabled, outcome);
-              const isLowest = lowest?.bookmakerId === bookmakerId && Number(lowest.value) === Number(value);
+              const isLowest = !isRef && lowest?.bookmakerId === bookmakerId && Number(lowest.value) === Number(value);
               const highlight = highlightClass(match, bookmakerId, outcome, value);
               const stateClass = value
                 ? highlight || (isBest ? "best" : isLowest ? "lowest" : "")
@@ -812,7 +820,7 @@ function renderRows(matches) {
           <td class="match-cell">
             <span class="kickoff">${formatTime(match.kickOffTime)}</span>
             <strong>${match.home} <span>vs</span> ${match.away}</strong>
-            <small>${match.leagueName}${match.goalsLine ? ` · golovi ${formatGoalsLine(match.goalsLine)}` : ""}</small>
+            <small>${match.leagueName}${match.goalsLine && state.view !== "all" ? ` · golovi ${formatGoalsLine(match.goalsLine)}` : ""}</small>
           </td>
           <td class="max-cell">
             ${

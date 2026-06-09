@@ -107,6 +107,12 @@ const BOOKMAKERS = [
     baseUrl: "https://www.soccerbet.rs",
   },
   {
+    id: "mozzartbet",
+    name: "Mozzart",
+    type: "mozzartbet",
+    baseUrl: "https://www.mozzartbet.com",
+  },
+  {
     id: "superbet",
     name: "Superbet",
     type: "superbet",
@@ -119,6 +125,19 @@ const BOOKMAKERS = [
     baseUrl: "https://sports-sm-distribution-api.de-2.nsoftcdn.com",
     companyUuid: "4f54c6aa-82a9-475d-bf0e-dc02ded89225",
     tournamentId: 30,
+  },
+  {
+    id: "betinasia",
+    name: "BetInAsia",
+    type: "oddsmath",
+    baseUrl: "https://www.oddsmath.com",
+  },
+  {
+    id: "betfair_lay",
+    name: "Betfair Lay",
+    type: "oddsmath",
+    baseUrl: "https://www.oddsmath.com",
+    isReference: true,
   },
 ];
 
@@ -133,6 +152,18 @@ const PINNACLE_SHIN_BOOKMAKER = {
 const DISPLAY_BOOKMAKERS = [PINNACLE_SHIN_BOOKMAKER, ...BOOKMAKERS];
 const FEED_BOOKMAKERS = BOOKMAKERS;
 const ps3838Cache = {
+  expiresAt: 0,
+  promise: null,
+  result: null,
+};
+
+const mozzartbetCache = {
+  expiresAt: 0,
+  promise: null,
+  result: null,
+};
+
+const oddsmathCache = {
   expiresAt: 0,
   promise: null,
   result: null,
@@ -708,6 +739,57 @@ function normalizeSuperbetMatches(bookmaker, payload) {
     });
 }
 
+function normalizeMozzartbetMatches(bookmaker, payload) {
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+
+  return items.map((item) => {
+    const home = item.home?.name || "";
+    const away = item.visitor?.name || "";
+    const kickOffTime = Number(item.startTime) || null;
+
+    const outcomeGroup = (name) => item.oddsGroup?.find((g) => g.groupName === name);
+
+    const getOdd = (groupName, subgameName) => {
+      const g = outcomeGroup(groupName);
+      const o = g?.odds?.find((odd) => odd.subgame?.name === subgameName);
+      return o?.value ? Number(o.value) : null;
+    };
+
+    const homeOdd = getOdd("Konačan ishod", "1");
+    const drawOdd = getOdd("Konačan ishod", "X");
+    const awayOdd = getOdd("Konačan ishod", "2");
+
+    const over25 = getOdd("Ukupno golova na meču", "3+");
+    const under25 = getOdd("Ukupno golova na meču", "0-2");
+
+    const totalsByLine = emptyTotalsByLine();
+    if (over25 !== null || under25 !== null) {
+      setTotalsLine(totalsByLine, 2.5, { over: over25, under: under25 });
+    }
+
+    return {
+      bookmakerId: bookmaker.id,
+      bookmakerName: bookmaker.name,
+      source: bookmaker.type,
+      matchKey: createMatchKey(home, away, kickOffTime),
+      externalId: item.id,
+      matchCode: item.matchNumber,
+      home: normalizeTeamName(home),
+      away: normalizeTeamName(away),
+      leagueName: "World Cup 2026",
+      leagueGroup: String(item.competition?.id || ""),
+      kickOffTime,
+      updatedAt: Date.now(),
+      odds: {
+        home: homeOdd,
+        draw: drawOdd,
+        away: awayOdd,
+      },
+      totalsByLine,
+    };
+  });
+}
+
 function getPinnacleLeagues(payload) {
   if (Array.isArray(payload?.value)) return payload.value;
   if (Array.isArray(payload?.leagues)) return payload.leagues;
@@ -981,6 +1063,7 @@ function normalizeTeamName(value) {
   const aliases = new Map([
     ["bih", "Bosnia and Herzegovina"],
     ["bosnia and herzegovina", "Bosnia and Herzegovina"],
+    ["bosnia-herzegovina", "Bosnia and Herzegovina"],
     ["bosnia and herz", "Bosnia and Herzegovina"],
     ["bosna i hercegovina", "Bosnia and Herzegovina"],
     ["czech rep", "Czech Republic"],
@@ -1291,6 +1374,292 @@ async function fetchSseSnapshot(url, timeoutMs = FEED_TIMEOUT_MS) {
 }
 
 
+async function fetchMozzartbetPage(page, timeoutMs = FEED_TIMEOUT_MS) {
+  const url = "https://www.mozzartbet.com/betting/matches";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  const payload = {
+    date: "all_days",
+    sort: "bycompetition",
+    currentPage: page,
+    pageSize: 50,
+    sportId: 1,
+    competitionIds: [12211],
+    search: "",
+    matchTypeId: 0,
+  };
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      signal: controller.signal,
+      headers: {
+        accept: "application/json, text/plain, */*",
+        "content-type": "application/json",
+        medium: "PREMATCH_WEB",
+        origin: "https://www.mozzartbet.com",
+        referer: "https://www.mozzartbet.com/sr/kladjenje/sport/1?date=all_days",
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(`HTTP ${response.status}: ${text.slice(0, 150)}`);
+    }
+
+    return await response.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchMozzartbetMatches(bookmaker) {
+  const page0 = await fetchMozzartbetPage(0);
+  let allItems = Array.isArray(page0?.items) ? page0.items : [];
+
+  const totalMatches = page0?.matchCount || 0;
+  if (totalMatches > 50 && allItems.length === 50) {
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      const page1 = await fetchMozzartbetPage(1);
+      if (Array.isArray(page1?.items)) {
+        allItems = [...allItems, ...page1.items];
+      }
+    } catch (error) {
+      console.warn("Mozzartbet page 1 fetch failed, proceeding with page 0 only:", error.message);
+    }
+  }
+
+  const matches = normalizeMozzartbetMatches(bookmaker, { items: allItems });
+  return {
+    bookmaker,
+    status: "ok",
+    url: "https://www.mozzartbet.com/betting/matches",
+    matches,
+    fetchedAt: Date.now(),
+    totalMatches: allItems.length,
+  };
+}
+
+async function getMozzartbetFeed(bookmaker) {
+  const now = Date.now();
+  if (mozzartbetCache.result && mozzartbetCache.expiresAt > now) {
+    return {
+      ...mozzartbetCache.result,
+      cached: true,
+      message: mozzartbetCache.result.message || "Using cached Mozzartbet feed.",
+    };
+  }
+
+  if (!mozzartbetCache.promise) {
+    mozzartbetCache.promise = fetchMozzartbetMatches(bookmaker)
+      .then((result) => {
+        mozzartbetCache.result = result;
+        mozzartbetCache.expiresAt = Date.now() + 60000;
+        return result;
+      })
+      .catch((error) => {
+        const errorResult = {
+          bookmaker,
+          status: "error",
+          url: "https://www.mozzartbet.com/betting/matches",
+          matches: [],
+          message: error.message,
+        };
+        mozzartbetCache.result = errorResult;
+        mozzartbetCache.expiresAt = Date.now() + 180000; // Cache failures for 3 minutes to cool down
+        return errorResult;
+      })
+      .finally(() => {
+        mozzartbetCache.promise = null;
+      });
+  }
+
+  return mozzartbetCache.promise;
+}
+
+const ODDSMATH_LEAGUE_ID = Number(process.env.ODDSMATH_LEAGUE_ID || 115437);
+
+async function fetchOddsmathMatches() {
+  const leagueId = ODDSMATH_LEAGUE_ID;
+  const leagueUrl = `https://www.oddsmath.com/api/v1/events-by-league.json/?language=en&country_code=RS&league_id=${leagueId}`;
+
+  const leaguePayload = await fetchJson(leagueUrl);
+  const events = [];
+  if (leaguePayload?.data) {
+    for (const dateKey of Object.keys(leaguePayload.data)) {
+      const dateObj = leaguePayload.data[dateKey];
+      if (dateObj?.events) {
+        for (const eventId of Object.keys(dateObj.events)) {
+          const ev = dateObj.events[eventId];
+          events.push({
+            id: eventId,
+            home: ev.hometeam_name,
+            away: ev.awayteam_name,
+            time: ev.time,
+          });
+        }
+      }
+    }
+  }
+
+  const matches = [];
+  const chunkSize = 15;
+  for (let i = 0; i < events.length; i += chunkSize) {
+    const chunk = events.slice(i, i + chunkSize);
+    const promises = chunk.map(async (event) => {
+      const url0 = `https://www.oddsmath.com/api/v1/live-odds.json/?event_id=${event.id}&cat_id=0&include_exchanges=1&language=en&country_code=RS`;
+      const url6 = `https://www.oddsmath.com/api/v1/live-odds.json/?event_id=${event.id}&cat_id=6&include_exchanges=1&language=en&country_code=RS`;
+      try {
+        const [res0, res6] = await Promise.all([
+          fetchJson(url0),
+          fetchJson(url6),
+        ]);
+        const eventData0 = res0?.data || {};
+        const eventData6 = res6?.data || {};
+
+        const biaLive = eventData0.BetInAsia?.live;
+        const biaOdds = biaLive ? {
+          home: normalizePrice(biaLive['1'] || biaLive[1]),
+          draw: normalizePrice(biaLive['X'] || biaLive['x']),
+          away: normalizePrice(biaLive['2'] || biaLive[2]),
+        } : { home: null, draw: null, away: null };
+
+        const biaLive6 = eventData6.BetInAsia?.live;
+        const biaTotals = biaLive6 ? {
+          over: normalizePrice(biaLive6.O || biaLive6.o),
+          under: normalizePrice(biaLive6.U || biaLive6.u),
+        } : { over: null, under: null };
+
+        const bfLay = eventData0.Betfair?.live_exchange_lay;
+        const bfOdds = bfLay ? {
+          home: normalizePrice(bfLay['1'] || bfLay[1]),
+          draw: normalizePrice(bfLay['X'] || bfLay['x']),
+          away: normalizePrice(bfLay['2'] || bfLay[2]),
+        } : { home: null, draw: null, away: null };
+
+        const bfLay6 = eventData6.Betfair?.live_exchange_lay;
+        const bfTotals = bfLay6 ? {
+          over: normalizePrice(bfLay6.O || bfLay6.o),
+          under: normalizePrice(bfLay6.U || bfLay6.u),
+        } : { over: null, under: null };
+
+        const kickOffTime = event.time ? new Date(event.time + "Z").getTime() : null;
+
+        matches.push({
+          eventId: event.id,
+          home: normalizeTeamName(event.home),
+          away: normalizeTeamName(event.away),
+          kickOffTime,
+          biaOdds,
+          biaTotals,
+          bfOdds,
+          bfTotals,
+        });
+      } catch (err) {
+        console.warn(`Failed to fetch live odds for event ${event.id}:`, err.message);
+      }
+    });
+    await Promise.all(promises);
+  }
+
+  return {
+    url: leagueUrl,
+    matches,
+    fetchedAt: Date.now(),
+    totalMatches: events.length,
+  };
+}
+
+function getOddsmathMatchesForBookmaker(bookmaker, allOddsmathMatches) {
+  return allOddsmathMatches.map((item) => {
+    const isBia = bookmaker.id === "betinasia";
+    const odds = isBia ? item.biaOdds : item.bfOdds;
+    const totals = isBia ? item.biaTotals : item.bfTotals;
+
+    const totalsByLine = emptyTotalsByLine();
+    if (totals.over !== null || totals.under !== null) {
+      setTotalsLine(totalsByLine, 2.5, totals);
+    }
+
+    return {
+      bookmakerId: bookmaker.id,
+      bookmakerName: bookmaker.name,
+      source: bookmaker.type,
+      isReference: Boolean(bookmaker.isReference),
+      matchKey: createMatchKey(item.home, item.away, item.kickOffTime),
+      externalId: item.eventId,
+      matchCode: null,
+      home: item.home,
+      away: item.away,
+      leagueName: "World Cup 2026",
+      leagueGroup: String(ODDSMATH_LEAGUE_ID),
+      kickOffTime: item.kickOffTime,
+      updatedAt: Date.now(),
+      odds,
+      totalsByLine,
+    };
+  });
+}
+
+async function getOddsmathFeed(bookmaker) {
+  const now = Date.now();
+  if (oddsmathCache.result && oddsmathCache.expiresAt > now) {
+    const matches = getOddsmathMatchesForBookmaker(bookmaker, oddsmathCache.result.matches);
+    return {
+      bookmaker,
+      status: "ok",
+      url: oddsmathCache.result.url,
+      matches,
+      fetchedAt: oddsmathCache.result.fetchedAt,
+      totalMatches: oddsmathCache.result.totalMatches,
+      cached: true,
+      message: "Using cached Oddsmath feed.",
+    };
+  }
+
+  if (!oddsmathCache.promise) {
+    oddsmathCache.promise = fetchOddsmathMatches()
+      .then((result) => {
+        oddsmathCache.result = result;
+        oddsmathCache.expiresAt = Date.now() + 60000;
+        return result;
+      })
+      .catch((error) => {
+        oddsmathCache.promise = null;
+        throw error;
+      })
+      .finally(() => {
+        oddsmathCache.promise = null;
+      });
+  }
+
+  try {
+    const result = await oddsmathCache.promise;
+    const matches = getOddsmathMatchesForBookmaker(bookmaker, result.matches);
+    return {
+      bookmaker,
+      status: "ok",
+      url: result.url,
+      matches,
+      fetchedAt: result.fetchedAt,
+      totalMatches: result.totalMatches,
+    };
+  } catch (error) {
+    return {
+      bookmaker,
+      status: "error",
+      url: "https://www.oddsmath.com",
+      matches: [],
+      message: error.message,
+    };
+  }
+}
+
 async function fetchPs3838Snapshot(bookmaker) {
   const fixturesUrl = ps3838FixturesUrl();
   const oddsUrl = ps3838OddsUrl("v4");
@@ -1517,6 +1886,13 @@ async function fetchBookmaker(bookmaker) {
     }
   }
 
+  if (bookmaker.type === "mozzartbet") {
+    return getMozzartbetFeed(bookmaker);
+  }
+
+  if (bookmaker.type === "oddsmath") {
+    return getOddsmathFeed(bookmaker);
+  }
 
 
   if (bookmaker.type !== "dualsoft") {
