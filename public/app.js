@@ -95,12 +95,132 @@ function collectOddsSnapshot(data) {
   return snapshot;
 }
 
+function getBookmakerName(bookmakerId) {
+  const bookmaker = state.data?.bookmakers?.find((b) => b.id === bookmakerId);
+  return bookmaker?.name || bookmakerId;
+}
+
+function getOutcomeToastLabel(match, outcome) {
+  if (outcome === "over25") {
+    const line = formatGoalsLine(match?.goalsLine || 2.5);
+    return `Golovi ${line}+`;
+  }
+  if (outcome === "under25") {
+    const line = formatGoalsLine(match?.goalsLine || 2.5);
+    return `Golovi ${line}-`;
+  }
+  return marketLabels[outcome] || outcome;
+}
+
+function showOddsChangeNotification(changes) {
+  let toastContainer = document.querySelector(".toast-container");
+  if (!toastContainer) {
+    toastContainer = document.createElement("div");
+    toastContainer.className = "toast-container";
+    document.body.appendChild(toastContainer);
+  }
+
+  function removeToast(toast) {
+    toast.classList.remove("show");
+    toast.classList.add("fade-out");
+    setTimeout(() => {
+      toast.remove();
+    }, 400);
+  }
+
+  if (changes.length > 4) {
+    const matchKeys = new Set(changes.map((c) => c.matchKey));
+    const toast = document.createElement("div");
+    toast.className = "toast";
+    toast.innerHTML = `
+      <div class="toast-header">
+        <span class="toast-title">Ažuriranje kvota</span>
+        <button class="toast-close" type="button" aria-label="Zatvori">&times;</button>
+      </div>
+      <div class="toast-body">
+        <div class="toast-match">Promene u kvotama</div>
+        <div>Ukupno <strong>${changes.length}</strong> promena kvota na <strong>${matchKeys.size}</strong> utakmica.</div>
+      </div>
+      <div class="toast-progress"></div>
+    `;
+
+    toast.querySelector(".toast-close").addEventListener("click", () => {
+      removeToast(toast);
+    });
+
+    toastContainer.appendChild(toast);
+    requestAnimationFrame(() => {
+      toast.classList.add("show");
+    });
+
+    setTimeout(() => {
+      if (toast.parentNode) removeToast(toast);
+    }, 5000);
+  } else {
+    changes.forEach((change) => {
+      const match = state.data?.matches?.find((m) => m.matchKey === change.matchKey);
+      if (!match) return;
+
+      const bName = getBookmakerName(change.bookmakerId);
+      const label = getOutcomeToastLabel(match, change.outcome);
+      const isUp = change.newValue > change.oldValue;
+      const badgeClass = isUp ? "up" : "down";
+      const icon = isUp ? "↑" : "↓";
+
+      const toast = document.createElement("div");
+      toast.className = "toast";
+      toast.innerHTML = `
+        <div class="toast-header">
+          <span class="toast-title">Promena kvote</span>
+          <button class="toast-close" type="button" aria-label="Zatvori">&times;</button>
+        </div>
+        <div class="toast-body">
+          <div class="toast-match">${match.home} vs ${match.away}</div>
+          <div class="toast-detail">
+            <span>${bName} · ${label}</span>
+            <span class="toast-odd-badge ${badgeClass}">${icon} ${change.newValue.toFixed(2)}</span>
+            <span class="toast-transition">(${change.oldValue.toFixed(2)} &rarr; ${change.newValue.toFixed(2)})</span>
+          </div>
+        </div>
+        <div class="toast-progress"></div>
+      `;
+
+      toast.querySelector(".toast-close").addEventListener("click", () => {
+        removeToast(toast);
+      });
+
+      toastContainer.appendChild(toast);
+      requestAnimationFrame(() => {
+        toast.classList.add("show");
+      });
+
+      setTimeout(() => {
+        if (toast.parentNode) removeToast(toast);
+      }, 5000);
+    });
+  }
+}
+
 function trackChangedOdds(previousSnapshot, nextSnapshot) {
   const now = Date.now();
+  const changes = [];
+
   for (const [key, value] of nextSnapshot.entries()) {
     const previousValue = previousSnapshot.get(key);
     if (previousValue && previousValue !== value) {
       state.changedOddsUntil.set(key, now + oddsPulseMs);
+
+      const parts = key.split("|");
+      if (parts.length === 3) {
+        const [matchKey, bookmakerId, outcome] = parts;
+        changes.push({
+          matchKey,
+          bookmakerId,
+          outcome,
+          oldValue: Number(previousValue),
+          newValue: Number(value),
+        });
+      }
     }
   }
 
@@ -109,6 +229,10 @@ function trackChangedOdds(previousSnapshot, nextSnapshot) {
   }
 
   state.oddsSnapshot = nextSnapshot;
+
+  if (previousSnapshot.size > 0 && changes.length > 0) {
+    showOddsChangeNotification(changes);
+  }
 }
 
 function isOddPulsing(matchKey, bookmakerId, outcome) {
