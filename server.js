@@ -1746,13 +1746,20 @@ async function fetchBookmaker(bookmaker) {
       const payload = await fetchSseSnapshot(url);
       const events = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
       let detailMessage = null;
-      const detailEvents = await fetchSuperbetEventDetails(bookmaker, events).catch((error) => {
-        detailMessage = `Superbet detail markets failed: ${error.message}`;
-        return [];
-      });
-      if (!detailMessage && detailEvents.length < events.length) {
-        detailMessage = `Loaded Superbet detail markets for ${detailEvents.length}/${events.length} events.`;
+      let detailEvents = [];
+
+      if (!SUPERBET_SKIP_DETAIL) {
+        detailEvents = await fetchSuperbetEventDetails(bookmaker, events).catch((error) => {
+          detailMessage = `Superbet detail markets failed: ${error.message}`;
+          return [];
+        });
+        if (!detailMessage && detailEvents.length < events.length) {
+          detailMessage = `Loaded Superbet detail markets for ${detailEvents.length}/${events.length} events.`;
+        }
+      } else {
+        detailMessage = "Superbet detail markets skipped (serverless mode).";
       }
+
       const mergedPayload = mergeSuperbetDetailEvents(events, detailEvents);
       const matches = normalizeSuperbetMatches(bookmaker, mergedPayload);
       return {
@@ -1775,6 +1782,7 @@ async function fetchBookmaker(bookmaker) {
       };
     }
   }
+
 
   if (bookmaker.type !== "dualsoft") {
     return {
