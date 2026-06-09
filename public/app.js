@@ -116,53 +116,40 @@ function getOutcomeToastLabel(match, outcome) {
 }
 
 function showOddsChangeNotification(changes) {
-  let toastContainer = document.querySelector(".toast-container");
-  if (!toastContainer) {
-    toastContainer = document.createElement("div");
-    toastContainer.className = "toast-container";
-    document.body.appendChild(toastContainer);
-  }
-
-  function removeToast(toast) {
-    toast.classList.remove("show");
-    toast.classList.add("fade-out");
-    setTimeout(() => {
-      toast.remove();
-    }, 400);
-  }
-
-  if (changes.length > 4) {
-    const matchKeys = new Set(changes.map((c) => c.matchKey));
-    const toast = document.createElement("div");
-    toast.className = "toast";
-    toast.innerHTML = `
-      <div class="toast-header">
-        <span class="toast-title">Ažuriranje kvota</span>
-        <button class="toast-close" type="button" aria-label="Zatvori">&times;</button>
+  let backdrop = document.querySelector(".notification-backdrop");
+  if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.className = "notification-backdrop";
+    backdrop.innerHTML = `
+      <div class="notification-modal">
+        <div class="notification-header">
+          <span class="notification-title">Promena Kvota</span>
+          <button class="notification-close" type="button" aria-label="Zatvori">&times;</button>
+        </div>
+        <div class="notification-body">
+          <div class="notification-subtitle">Detektovane su promene kvota:</div>
+          <div class="notification-list"></div>
+        </div>
       </div>
-      <div class="toast-body">
-        <div class="toast-match">Promene u kvotama</div>
-        <div>Ukupno <strong>${changes.length}</strong> promena kvota na <strong>${matchKeys.size}</strong> utakmica.</div>
-      </div>
-      <div class="toast-progress"></div>
     `;
+    document.body.appendChild(backdrop);
 
-    toast.querySelector(".toast-close").addEventListener("click", () => {
-      removeToast(toast);
+    const closeBtn = backdrop.querySelector(".notification-close");
+    closeBtn.addEventListener("click", () => {
+      backdrop.classList.remove("show");
     });
-
-    toastContainer.appendChild(toast);
-    requestAnimationFrame(() => {
-      toast.classList.add("show");
+    backdrop.addEventListener("click", (e) => {
+      if (e.target === backdrop) {
+        backdrop.classList.remove("show");
+      }
     });
+  }
 
-    setTimeout(() => {
-      if (toast.parentNode) removeToast(toast);
-    }, 5000);
-  } else {
-    changes.forEach((change) => {
+  const list = backdrop.querySelector(".notification-list");
+  list.innerHTML = changes
+    .map((change) => {
       const match = state.data?.matches?.find((m) => m.matchKey === change.matchKey);
-      if (!match) return;
+      if (!match) return "";
 
       const bName = getBookmakerName(change.bookmakerId);
       const label = getOutcomeToastLabel(match, change.outcome);
@@ -170,38 +157,23 @@ function showOddsChangeNotification(changes) {
       const badgeClass = isUp ? "up" : "down";
       const icon = isUp ? "↑" : "↓";
 
-      const toast = document.createElement("div");
-      toast.className = "toast";
-      toast.innerHTML = `
-        <div class="toast-header">
-          <span class="toast-title">Promena kvote</span>
-          <button class="toast-close" type="button" aria-label="Zatvori">&times;</button>
-        </div>
-        <div class="toast-body">
-          <div class="toast-match">${match.home} vs ${match.away}</div>
-          <div class="toast-detail">
-            <span>${bName} · ${label}</span>
-            <span class="toast-odd-badge ${badgeClass}">${icon} ${change.newValue.toFixed(2)}</span>
-            <span class="toast-transition">(${change.oldValue.toFixed(2)} &rarr; ${change.newValue.toFixed(2)})</span>
+      return `
+        <div class="notification-item">
+          <div class="notification-match">${match.home} vs ${match.away}</div>
+          <div class="notification-detail">
+            <span class="notification-meta">${bName} · ${label}</span>
+            <div class="notification-change-box">
+              <span class="notification-odd-transition">${change.oldValue.toFixed(2)} &rarr;</span>
+              <span class="notification-badge ${badgeClass}">${icon} ${change.newValue.toFixed(2)}</span>
+            </div>
           </div>
         </div>
-        <div class="toast-progress"></div>
       `;
+    })
+    .filter(Boolean)
+    .join("");
 
-      toast.querySelector(".toast-close").addEventListener("click", () => {
-        removeToast(toast);
-      });
-
-      toastContainer.appendChild(toast);
-      requestAnimationFrame(() => {
-        toast.classList.add("show");
-      });
-
-      setTimeout(() => {
-        if (toast.parentNode) removeToast(toast);
-      }, 5000);
-    });
-  }
+  backdrop.classList.add("show");
 }
 
 function trackChangedOdds(previousSnapshot, nextSnapshot) {
