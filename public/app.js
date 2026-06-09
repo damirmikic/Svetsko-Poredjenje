@@ -439,6 +439,137 @@ function normalizePrice(value) {
   return isValidOdd(numeric) ? Number(numeric.toFixed(3)) : null;
 }
 
+function emptyTotals25() {
+  return { over: null, under: null, line: null };
+}
+
+function emptyTotalsByLine() {
+  return {};
+}
+
+function normalizeGoalsLine(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? Number(numeric.toFixed(2)) : null;
+}
+
+function textLooksOver(value) {
+  const text = String(value || "")
+    .toLocaleLowerCase("sr-RS")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return /\bover\b|\bo\b|vise|preko|3\+/.test(text);
+}
+
+function textLooksUnder(value) {
+  const text = String(value || "")
+    .toLocaleLowerCase("sr-RS")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return /\bunder\b|\bu\b|manje|ispod|0-2/.test(text);
+}
+
+function totalLineFromObject(item) {
+  return (
+    item?.points ??
+    item?.point ??
+    item?.line ??
+    item?.handicap ??
+    item?.total ??
+    item?.metadata?.specifiers?.total ??
+    item?.metadata?.special_bet_value ??
+    item?.value ??
+    item?.p
+  );
+}
+
+function priceFromObject(item) {
+  return item?.price ?? item?.odds ?? item?.decimal ?? item?.value ?? item?.g ?? item?.ov;
+}
+
+function sidePriceFromObject(value) {
+  return value && typeof value === "object" ? priceFromObject(value) : value;
+}
+
+function getOutcomeName(item) {
+  return [item?.name, item?.label, item?.selection, item?.type, item?.side, item?.e, item?.metadata?.name]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function setTotalsLine(totalsByLine, lineValue, totals) {
+  const line = normalizeGoalsLine(lineValue);
+  if (line === null) return;
+
+  const key = String(line);
+  const existing = totalsByLine[key] || emptyTotals25();
+  totalsByLine[key] = {
+    line,
+    over: existing.over || normalizePrice(totals.over),
+    under: existing.under || normalizePrice(totals.under),
+  };
+}
+
+function totalsByLineFromLines(lines) {
+  const totalsByLine = emptyTotalsByLine();
+  if (!Array.isArray(lines)) return totalsByLine;
+
+  for (const line of lines) {
+    const lineValue = totalLineFromObject(line);
+    const nestedOutcomes = line?.outcomes || line?.prices || line?.odds || line?.h;
+    const directOver = normalizePrice(sidePriceFromObject(line.over ?? line.overPrice ?? line.overOdds ?? line.o));
+    const directUnder = normalizePrice(sidePriceFromObject(line.under ?? line.underPrice ?? line.underOdds ?? line.u));
+
+    if (directOver || directUnder) {
+      setTotalsLine(totalsByLine, lineValue, { over: directOver, under: directUnder });
+    }
+
+    if (Array.isArray(nestedOutcomes)) {
+      for (const outcome of nestedOutcomes) {
+        const outcomeLine = totalLineFromObject(outcome) ?? lineValue;
+        const normalizedLine = normalizeGoalsLine(outcomeLine);
+        if (normalizedLine === null) continue;
+
+        const name = getOutcomeName(outcome);
+        const price = normalizePrice(priceFromObject(outcome));
+        const current = totalsByLine[String(normalizedLine)] || {
+          line: normalizedLine,
+          over: null,
+          under: null,
+        };
+        if (textLooksOver(name)) current.over ||= price;
+        if (textLooksUnder(name)) current.under ||= price;
+        totalsByLine[String(normalizedLine)] = current;
+      }
+    }
+  }
+
+  return totalsByLine;
+}
+
+function totalsByLineFromLineObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return totalsByLineFromLines(value);
+  return totalsByLineFromLines(
+    Object.entries(value).map(([line, item]) =>
+      item && typeof item === "object" ? { line, ...item } : { line, value: item },
+    ),
+  );
+}
+
+function totalsForLine(totalsByLine, line) {
+  const normalizedLine = normalizeGoalsLine(line);
+  if (normalizedLine === null) return emptyTotals25();
+  const totals = totalsByLine?.[String(normalizedLine)] || {};
+  return {
+    line: normalizedLine,
+    over: normalizePrice(totals.over),
+    under: normalizePrice(totals.under),
+  };
+}
+
+function hasCompleteTotals(totals) {
+  return isValidOdd(totals?.over) && isValidOdd(totals?.under);
+}
+
 function getPinnacleEvents(payload) {
   if (Array.isArray(payload?.events)) return payload.events;
   if (Array.isArray(payload?.value)) return payload.value;
@@ -480,6 +611,26 @@ function getPinnacleMoneyline(event) {
     periods.find((period) => String(period.description || "").toLocaleLowerCase("en-US").includes("match")) ||
     periods[0];
   return fullGame?.moneyline || fullGame?.moneyLine || {};
+}
+
+function getPinnacleTotalsByLine(event) {
+  const directTotals = event.totals || event.totalPoints || event.overUnder;
+  if (directTotals) return Array.isArray(directTotals) ? totalsByLineFromLines(directTotals) : totalsByLineFromLineObject(directTotals);
+
+  if (event.periods && !Array.isArray(event.periods)) {
+    const period = event.periods["0"] || event.periods[0] || {};
+    const totals = period.totals || period.totalPoints || period.overUnder;
+    return Array.isArray(totals) ? totalsByLineFromLines(totals) : totalsByLineFromLineObject(totals);
+  }
+
+  const periods = Array.isArray(event.periods) ? event.periods : [];
+  const fullGame =
+    periods.find((period) => Number(period.number) === 0) ||
+    periods.find((period) => String(period.description || "").toLocaleLowerCase("en-US").includes("match")) ||
+    periods[0] ||
+    {};
+  const totals = fullGame.totals || fullGame.totalPoints || fullGame.overUnder;
+  return Array.isArray(totals) ? totalsByLineFromLines(totals) : totalsByLineFromLineObject(totals);
 }
 
 function shinProbabilities(odds) {
@@ -543,10 +694,95 @@ function estimateBestMargin(bookmakers) {
   return Number(((values.reduce((sum, value) => sum + 1 / value, 0) - 1) * 100).toFixed(2));
 }
 
+function getBestTotals25(bookmakers) {
+  const best = {};
+  for (const field of ["over", "under"]) {
+    let top = { value: null, bookmakerId: null, bookmakerName: null };
+    for (const entry of Object.values(bookmakers || {})) {
+      if (entry.isReference) continue;
+      const value = Number(entry.totals25?.[field]);
+      if (isValidOdd(value) && (!top.value || value > top.value)) {
+        top = { value, bookmakerId: entry.bookmakerId, bookmakerName: entry.bookmakerName };
+      }
+    }
+    best[field] = top;
+  }
+  return best;
+}
+
+function chooseGoalsLine(match) {
+  const pinnacleTotals = match.bookmakers?.pinnacle?.totalsByLine || {};
+  if (hasCompleteTotals(totalsForLine(pinnacleTotals, 2.5))) return 2.5;
+  if (hasCompleteTotals(totalsForLine(pinnacleTotals, 3.5))) return 3.5;
+
+  const fallbackTotals = match.bookmakers?.betinasia?.totalsByLine || {};
+  if (hasCompleteTotals(totalsForLine(fallbackTotals, 2.5))) return 2.5;
+  if (hasCompleteTotals(totalsForLine(fallbackTotals, 3.5))) return 3.5;
+
+  for (const entry of Object.values(match.bookmakers || {})) {
+    if (entry.isReference) continue;
+    if (hasCompleteTotals(totalsForLine(entry.totalsByLine, 2.5))) return 2.5;
+  }
+
+  for (const entry of Object.values(match.bookmakers || {})) {
+    if (entry.isReference) continue;
+    if (hasCompleteTotals(totalsForLine(entry.totalsByLine, 3.5))) return 3.5;
+  }
+
+  return null;
+}
+
+function applySelectedGoalsLine(match) {
+  const goalsLine = chooseGoalsLine(match);
+  match.goalsLine = goalsLine;
+
+  for (const entry of Object.values(match.bookmakers || {})) {
+    entry.totals25 = goalsLine === null ? emptyTotals25() : totalsForLine(entry.totalsByLine, goalsLine);
+  }
+}
+
+function applyNoVigReference(match) {
+  const pinnacle = match.bookmakers?.pinnacle;
+  const betinasia = match.bookmakers?.betinasia;
+  const oddsSource =
+    isValidOdd(pinnacle?.odds?.home) && isValidOdd(pinnacle?.odds?.draw) && isValidOdd(pinnacle?.odds?.away)
+      ? pinnacle
+      : betinasia;
+  const totalsSource =
+    hasCompleteTotals(pinnacle?.totals25)
+      ? pinnacle
+      : hasCompleteTotals(betinasia?.totals25)
+        ? betinasia
+        : pinnacle;
+
+  const [home, draw, away] = shinNoVigOdds([
+    oddsSource?.odds?.home,
+    oddsSource?.odds?.draw,
+    oddsSource?.odds?.away,
+  ]);
+  const [over, under] = shinNoVigOdds([
+    totalsSource?.totals25?.over,
+    totalsSource?.totals25?.under,
+  ]);
+
+  match.bookmakers.pinnacle_shin = {
+    ...match.bookmakers.pinnacle_shin,
+    bookmakerId: "pinnacle_shin",
+    bookmakerName: "Pinnacle no-vig",
+    isReference: true,
+    odds: { home, draw, away },
+    totalsByLine: match.goalsLine === null ? emptyTotalsByLine() : { [String(match.goalsLine)]: { line: match.goalsLine, over, under } },
+    totals25: { line: match.goalsLine, over, under },
+    updatedAt: oddsSource?.updatedAt || totalsSource?.updatedAt || null,
+    externalId: oddsSource?.externalId || totalsSource?.externalId || null,
+  };
+}
+
 function normalizePinnacleOffer(event) {
   const [home, away] = getPinnacleTeamNames(event);
   const kickOffTime = Number(getPinnacleKickoff(event));
   const moneyline = getPinnacleMoneyline(event);
+  const totalsByLine = getPinnacleTotalsByLine(event);
   return {
     matchKey: createMatchKey(home, away, kickOffTime),
     externalId: event.id || event.eventId || event.event_id,
@@ -555,6 +791,7 @@ function normalizePinnacleOffer(event) {
       draw: normalizePrice(moneyline.draw ?? moneyline.drawPrice),
       away: normalizePrice(moneyline.away ?? moneyline.awayPrice),
     },
+    totalsByLine,
   };
 }
 
@@ -564,7 +801,10 @@ async function hydratePinnacleFromBrowser() {
   const hasPinnacleOdds = (state.data?.matches || []).some((match) =>
     matchWinnerOutcomes.some((outcome) => isValidOdd(match.bookmakers?.pinnacle?.odds?.[outcome])),
   );
-  if (!state.data || hasPinnacleOdds || pinnacleFeed?.status === "ok") return;
+  const hasPinnacleGoals = (state.data?.matches || []).some((match) =>
+    hasCompleteTotals(match.bookmakers?.pinnacle?.totals25),
+  );
+  if (!state.data || (hasPinnacleOdds && hasPinnacleGoals)) return;
 
   const params = new URLSearchParams({
     sportId: String(pinnacleBrowserSportId),
@@ -598,20 +838,16 @@ async function hydratePinnacleFromBrowser() {
       bookmakerId: "pinnacle",
       bookmakerName: "Pinnacle",
       odds: offer.odds,
+      totalsByLine: Object.keys(offer.totalsByLine || {}).length
+        ? offer.totalsByLine
+        : match.bookmakers.pinnacle?.totalsByLine || emptyTotalsByLine(),
       updatedAt: Date.now(),
       externalId: offer.externalId,
     };
-    const [home, draw, away] = shinNoVigOdds([offer.odds.home, offer.odds.draw, offer.odds.away]);
-    match.bookmakers.pinnacle_shin = {
-      ...match.bookmakers.pinnacle_shin,
-      bookmakerId: "pinnacle_shin",
-      bookmakerName: "Pinnacle no-vig",
-      isReference: true,
-      odds: { home, draw, away },
-      updatedAt: Date.now(),
-      externalId: offer.externalId,
-    };
+    applySelectedGoalsLine(match);
+    applyNoVigReference(match);
     match.best = getBestOdds(match.bookmakers);
+    match.bestTotals25 = getBestTotals25(match.bookmakers);
     match.margin = estimateBestMargin(match.bookmakers);
   }
 
@@ -620,7 +856,8 @@ async function hydratePinnacleFromBrowser() {
     pinnacleFeed.message = "Loaded in browser fallback.";
     pinnacleFeed.worldCupMatches = offers.size;
     pinnacleFeed.matchedMatches = state.data.matches.filter((match) =>
-      matchWinnerOutcomes.some((outcome) => isValidOdd(match.bookmakers?.pinnacle?.odds?.[outcome])),
+      matchWinnerOutcomes.some((outcome) => isValidOdd(match.bookmakers?.pinnacle?.odds?.[outcome])) ||
+      hasCompleteTotals(match.bookmakers?.pinnacle?.totals25),
     ).length;
   }
 }

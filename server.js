@@ -136,6 +136,7 @@ const PINNACLE_SHIN_BOOKMAKER = {
   baseUrl: PINNACLE_API_BASE,
   isReference: true,
 };
+const NO_VIG_FALLBACK_BOOKMAKER = "betinasia";
 
 const DISPLAY_BOOKMAKERS = [PINNACLE_SHIN_BOOKMAKER, ...BOOKMAKERS];
 const FEED_BOOKMAKERS = BOOKMAKERS;
@@ -1794,6 +1795,10 @@ function chooseGoalsLine(match) {
   if (hasCompleteTotals(totalsForLine(pinnacleTotals, 2.5))) return 2.5;
   if (hasCompleteTotals(totalsForLine(pinnacleTotals, 3.5))) return 3.5;
 
+  const fallbackTotals = match.bookmakers[NO_VIG_FALLBACK_BOOKMAKER]?.totalsByLine || {};
+  if (hasCompleteTotals(totalsForLine(fallbackTotals, 2.5))) return 2.5;
+  if (hasCompleteTotals(totalsForLine(fallbackTotals, 3.5))) return 3.5;
+
   for (const entry of Object.values(match.bookmakers)) {
     if (entry.isReference) continue;
     if (hasCompleteTotals(totalsForLine(entry.totalsByLine, 2.5))) return 2.5;
@@ -1818,14 +1823,25 @@ function applySelectedGoalsLine(match) {
 
 function applyPinnacleShinNoVig(match) {
   const pinnacle = match.bookmakers.pinnacle;
+  const fallback = match.bookmakers[NO_VIG_FALLBACK_BOOKMAKER];
+  const oddsSource =
+    isValidDecimalOdd(pinnacle?.odds?.home) && isValidDecimalOdd(pinnacle?.odds?.draw) && isValidDecimalOdd(pinnacle?.odds?.away)
+      ? pinnacle
+      : fallback;
+  const totalsSource =
+    hasCompleteTotals(pinnacle?.totals25)
+      ? pinnacle
+      : hasCompleteTotals(fallback?.totals25)
+        ? fallback
+        : pinnacle;
   const [home, draw, away] = shinNoVigOdds([
-    pinnacle?.odds?.home,
-    pinnacle?.odds?.draw,
-    pinnacle?.odds?.away,
+    oddsSource?.odds?.home,
+    oddsSource?.odds?.draw,
+    oddsSource?.odds?.away,
   ]);
   const [over, under] = shinNoVigOdds([
-    pinnacle?.totals25?.over,
-    pinnacle?.totals25?.under,
+    totalsSource?.totals25?.over,
+    totalsSource?.totals25?.under,
   ]);
 
   match.bookmakers[PINNACLE_SHIN_BOOKMAKER.id] = {
@@ -1835,8 +1851,8 @@ function applyPinnacleShinNoVig(match) {
     odds: { home, draw, away },
     totalsByLine: match.goalsLine === null ? emptyTotalsByLine() : { [String(match.goalsLine)]: { line: match.goalsLine, over, under } },
     totals25: { line: match.goalsLine, over, under },
-    updatedAt: pinnacle?.updatedAt || null,
-    externalId: pinnacle?.externalId || null,
+    updatedAt: oddsSource?.updatedAt || totalsSource?.updatedAt || null,
+    externalId: oddsSource?.externalId || totalsSource?.externalId || null,
   };
 }
 
