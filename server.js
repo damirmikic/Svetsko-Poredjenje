@@ -1946,7 +1946,48 @@ function makeMatchRow(offer, truthSource = null) {
   };
 }
 
+function hasAnyValidOdds(entry) {
+  if (!entry) return false;
+  const odds = entry.odds;
+  if (odds && (isValidDecimalOdd(odds.home) || isValidDecimalOdd(odds.draw) || isValidDecimalOdd(odds.away))) {
+    return true;
+  }
+  if (entry.totals25 && (isValidDecimalOdd(entry.totals25.over) || isValidDecimalOdd(entry.totals25.under))) {
+    return true;
+  }
+  if (entry.totalsByLine) {
+    for (const lineObj of Object.values(entry.totalsByLine)) {
+      if (isValidDecimalOdd(lineObj?.over) || isValidDecimalOdd(lineObj?.under)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function attachOffer(row, offer) {
+  const existing = row.bookmakers[offer.bookmakerId];
+  const offerTime = Number(offer.kickOffTime || 0);
+  const rowTime = Number(row.kickOffTime || 0);
+  const newDiff = Math.abs(offerTime - rowTime);
+
+  if (existing && existing.updatedAt !== null) {
+    const existingHasOdds = hasAnyValidOdds(existing);
+    const newHasOdds = hasAnyValidOdds(offer);
+
+    if (existingHasOdds && !newHasOdds) {
+      return;
+    }
+    if (!existingHasOdds && newHasOdds) {
+      // Overwrite empty/null existing odds with valid new odds
+    } else {
+      const existingDiff = existing.timeDiff !== undefined ? existing.timeDiff : Infinity;
+      if (newDiff >= existingDiff) {
+        return;
+      }
+    }
+  }
+
   row.bookmakers[offer.bookmakerId] = {
     bookmakerId: offer.bookmakerId,
     bookmakerName: offer.bookmakerName,
@@ -1956,6 +1997,7 @@ function attachOffer(row, offer) {
     totals25: offer.totals25 || emptyTotals25(),
     updatedAt: offer.updatedAt,
     externalId: offer.externalId,
+    timeDiff: newDiff,
   };
 }
 
@@ -1976,7 +2018,8 @@ function findTruthRow(byMatch, offer) {
     if (!sameTeams) continue;
 
     const rowTime = Number(row.kickOffTime || 0);
-    if (!rowTime || !offerTime || Math.abs(rowTime - offerTime) <= 36 * 60 * 60 * 1000) {
+    // Use an 8-day threshold (8 * 24 * 60 * 60 * 1000) to consolidate matches with feed date discrepancies
+    if (!rowTime || !offerTime || Math.abs(rowTime - offerTime) <= 8 * 24 * 60 * 60 * 1000) {
       return row;
     }
   }
