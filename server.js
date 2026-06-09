@@ -1070,6 +1070,7 @@ async function fetchSseSnapshot(url) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
 
+  let onAbort;
   try {
     const response = await fetch(url, {
       signal: controller.signal,
@@ -1090,6 +1091,14 @@ async function fetchSseSnapshot(url) {
     const reader = response.body?.getReader();
     if (!reader) throw new Error("Missing response stream.");
 
+    onAbort = () => {
+      reader.cancel().catch(() => {});
+    };
+    controller.signal.addEventListener("abort", onAbort);
+    if (controller.signal.aborted) {
+      onAbort();
+    }
+
     const decoder = new TextDecoder();
     let buffer = "";
 
@@ -1104,11 +1113,18 @@ async function fetchSseSnapshot(url) {
       }
     }
 
+    if (controller.signal.aborted) {
+      throw new Error(`Request timed out after ${FEED_TIMEOUT_MS} ms.`);
+    }
+
     buffer += decoder.decode();
     const data = extractFirstSseData(buffer);
     if (!data) throw new Error("SSE snapshot did not include a data event.");
     return JSON.parse(data);
   } finally {
+    if (onAbort) {
+      controller.signal.removeEventListener("abort", onAbort);
+    }
     clearTimeout(timeout);
   }
 }
