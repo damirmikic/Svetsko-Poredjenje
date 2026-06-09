@@ -12,6 +12,8 @@ const PORT = Number(process.env.PORT || 3000);
 const DUALSOFT_VERSION = process.env.DUALSOFT_VERSION || "2.44.3.18";
 const LOCALE = "sr";
 const FEED_TIMEOUT_MS = Number(process.env.FEED_TIMEOUT_MS || 4000);
+const SUPERBET_DETAIL_TIMEOUT_MS = Number(process.env.SUPERBET_DETAIL_TIMEOUT_MS || Math.max(FEED_TIMEOUT_MS, 12000));
+const SUPERBET_DETAIL_CHUNK_SIZE = Number(process.env.SUPERBET_DETAIL_CHUNK_SIZE || 1);
 const ODDS_API_BASE = process.env.ODDS_API_BASE || "https://api.odds-api.io/v3";
 const ODDS_API_KEY = process.env.ODDS_API_KEY || "";
 const ODDS_API_SPORT = process.env.ODDS_API_SPORT || "football";
@@ -32,6 +34,18 @@ const PINNACLE_LEAGUE_CODE = process.env.PINNACLE_LEAGUE_CODE || "fifa-world-cup
 const PINNACLE_USE_LEAGUES_LOOKUP = process.env.PINNACLE_USE_LEAGUES_LOOKUP === "true";
 const PINNACLE_PERIOD_NUM = process.env.PINNACLE_PERIOD_NUM || "-1";
 const PINNACLE_EVENT_TYPE = process.env.PINNACLE_EVENT_TYPE || "0";
+const PS3838_ENABLED = process.env.PS3838_ENABLED === "true";
+const PS3838_API_BASE = process.env.PS3838_API_BASE || "https://api.ps3838.com";
+const PS3838_USERNAME = process.env.PS3838_USERNAME || "";
+const PS3838_PASSWORD = process.env.PS3838_PASSWORD || "";
+const PS3838_SPORT_ID = Number(process.env.PS3838_SPORT_ID || 29);
+const PS3838_LEAGUE_IDS = String(process.env.PS3838_LEAGUE_IDS || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const PS3838_ODDS_FORMAT = process.env.PS3838_ODDS_FORMAT || "Decimal";
+const PS3838_IS_LIVE = process.env.PS3838_IS_LIVE === "true";
+const PS3838_CACHE_MS = Number(process.env.PS3838_CACHE_MS || 30000);
 const SUPERBET_WORLD_CUP_TOURNAMENTS = [
   "1431",
   "1432",
@@ -82,7 +96,7 @@ const BOOKMAKERS = [
     id: "pinnacle",
     name: "Pinnacle",
     type: "pinnacle",
-    baseUrl: PINNACLE_API_BASE,
+    baseUrl: PS3838_ENABLED ? PS3838_API_BASE : PINNACLE_API_BASE,
     sourceOfTruth: true,
   },
   {
@@ -142,6 +156,11 @@ const DISPLAY_BOOKMAKERS = [
   ...BOOKMAKERS.filter((bookmaker) => bookmaker.id !== "oddsapi"),
 ];
 const FEED_BOOKMAKERS = BOOKMAKERS.filter((bookmaker) => bookmaker.id !== "oddsapi");
+const ps3838Cache = {
+  expiresAt: 0,
+  promise: null,
+  result: null,
+};
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -239,6 +258,14 @@ function superbetWorldCupUrl(bookmaker) {
   return `${bookmaker.baseUrl}/sr-Latn-RS/prematch?${params.toString()}`;
 }
 
+function superbetEventsUrl(bookmaker, eventIds) {
+  const params = new URLSearchParams({
+    events: eventIds.join(","),
+  });
+
+  return `${bookmaker.baseUrl}/sr-Latn-RS/events?${params.toString()}`;
+}
+
 function oddsApiUrl(pathname, params = {}) {
   const url = new URL(pathname, ODDS_API_BASE.endsWith("/") ? ODDS_API_BASE : `${ODDS_API_BASE}/`);
   const search = new URLSearchParams(params);
@@ -317,6 +344,44 @@ function pinnacleLeagueOddsUrl(leagueCode = PINNACLE_LEAGUE_CODE) {
   });
 }
 
+function ps3838Url(pathname, params = {}) {
+  const url = new URL(pathname, PS3838_API_BASE.endsWith("/") ? PS3838_API_BASE : `${PS3838_API_BASE}/`);
+  const search = new URLSearchParams(params);
+  if (PS3838_LEAGUE_IDS.length && !search.has("leagueIds")) {
+    search.set("leagueIds", PS3838_LEAGUE_IDS.join(","));
+  }
+  url.search = search.toString();
+  return url.toString();
+}
+
+function ps3838FixturesUrl(extraParams = {}) {
+  return ps3838Url("v3/fixtures", {
+    sportId: String(PS3838_SPORT_ID),
+    ...extraParams,
+  });
+}
+
+function ps3838OddsUrl(version = "v4", extraParams = {}) {
+  return ps3838Url(`${version}/odds`, {
+    sportId: String(PS3838_SPORT_ID),
+    oddsFormat: PS3838_ODDS_FORMAT,
+    isLive: String(PS3838_IS_LIVE),
+    ...extraParams,
+  });
+}
+
+function ps3838LeaguesUrl() {
+  return ps3838Url("v3/leagues", { sportId: String(PS3838_SPORT_ID) });
+}
+
+function ps3838Headers() {
+  return {
+    accept: "application/json",
+    "user-agent": "sp-kvote/0.1",
+    authorization: `Basic ${Buffer.from(`${PS3838_USERNAME}:${PS3838_PASSWORD}`).toString("base64")}`,
+  };
+}
+
 function textIncludesWorldCup(value) {
   const haystack = String(value || "").toLocaleLowerCase("sr-RS");
   return WORLD_CUP_TERMS.some((term) => haystack.includes(term));
@@ -373,7 +438,7 @@ function getDualsoftOdd(match, code) {
 }
 
 function emptyTotals25() {
-  return { over: null, under: null };
+  return { over: null, under: null, line: null };
 }
 
 function normalizePrice(value) {
@@ -381,23 +446,49 @@ function normalizePrice(value) {
   return Number.isFinite(numeric) && numeric > 1 ? Number(numeric.toFixed(3)) : null;
 }
 
-function lineIs25(value) {
+function normalizeGoalsLine(value) {
   const numeric = Number(value);
-  return Number.isFinite(numeric) && Math.abs(numeric - 2.5) < 0.001;
+  return Number.isFinite(numeric) ? Number(numeric.toFixed(2)) : null;
+}
+
+function lineMatches(value, targetLine) {
+  const line = normalizeGoalsLine(value);
+  const target = normalizeGoalsLine(targetLine);
+  return line !== null && target !== null && Math.abs(line - target) < 0.001;
+}
+
+function lineIs25(value) {
+  return lineMatches(value, 2.5);
 }
 
 function textLooksOver(value) {
-  const text = String(value || "").toLocaleLowerCase("en-US");
+  const text = String(value || "")
+    .toLocaleLowerCase("sr-RS")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
   return /\bover\b|\bo\b|vise|preko|3\+/.test(text);
 }
 
 function textLooksUnder(value) {
-  const text = String(value || "").toLocaleLowerCase("en-US");
+  const text = String(value || "")
+    .toLocaleLowerCase("sr-RS")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
   return /\bunder\b|\bu\b|manje|ispod|0-2/.test(text);
 }
 
 function totalLineFromObject(item) {
-  return item?.points ?? item?.point ?? item?.line ?? item?.handicap ?? item?.total ?? item?.value ?? item?.p;
+  return (
+    item?.points ??
+    item?.point ??
+    item?.line ??
+    item?.handicap ??
+    item?.total ??
+    item?.metadata?.specifiers?.total ??
+    item?.metadata?.special_bet_value ??
+    item?.value ??
+    item?.p
+  );
 }
 
 function priceFromObject(item) {
@@ -414,50 +505,130 @@ function getOutcomeName(item) {
     .join(" ");
 }
 
-function totals25FromLines(lines) {
-  const totals = emptyTotals25();
-  if (!Array.isArray(lines)) return totals;
+function emptyTotalsByLine() {
+  return {};
+}
+
+function setTotalsLine(totalsByLine, lineValue, totals) {
+  const line = normalizeGoalsLine(lineValue);
+  if (line === null) return;
+
+  const key = String(line);
+  const existing = totalsByLine[key] || emptyTotals25();
+  totalsByLine[key] = {
+    line,
+    over: existing.over || normalizePrice(totals.over),
+    under: existing.under || normalizePrice(totals.under),
+  };
+}
+
+function totalsByLineFromLines(lines) {
+  const totalsByLine = emptyTotalsByLine();
+  if (!Array.isArray(lines)) return totalsByLine;
 
   for (const line of lines) {
     const lineValue = totalLineFromObject(line);
     const nestedOutcomes = line?.outcomes || line?.prices || line?.odds || line?.h;
+    const directOver = normalizePrice(sidePriceFromObject(line.over ?? line.overPrice ?? line.overOdds ?? line.o));
+    const directUnder = normalizePrice(sidePriceFromObject(line.under ?? line.underPrice ?? line.underOdds ?? line.u));
 
-    if (lineIs25(lineValue)) {
-      totals.over ||= normalizePrice(sidePriceFromObject(line.over ?? line.overPrice ?? line.o));
-      totals.under ||= normalizePrice(sidePriceFromObject(line.under ?? line.underPrice ?? line.u));
+    if (directOver || directUnder) {
+      setTotalsLine(totalsByLine, lineValue, { over: directOver, under: directUnder });
     }
 
     if (Array.isArray(nestedOutcomes)) {
       for (const outcome of nestedOutcomes) {
         const outcomeLine = totalLineFromObject(outcome) ?? lineValue;
-        if (!lineIs25(outcomeLine)) continue;
+        const normalizedLine = normalizeGoalsLine(outcomeLine);
+        if (normalizedLine === null) continue;
 
         const name = getOutcomeName(outcome);
         const price = normalizePrice(priceFromObject(outcome));
-        if (textLooksOver(name)) totals.over ||= price;
-        if (textLooksUnder(name)) totals.under ||= price;
+        const current = totalsByLine[String(normalizedLine)] || {
+          line: normalizedLine,
+          over: null,
+          under: null,
+        };
+        if (textLooksOver(name)) current.over ||= price;
+        if (textLooksUnder(name)) current.under ||= price;
+        totalsByLine[String(normalizedLine)] = current;
       }
     }
   }
 
-  return totals;
+  return totalsByLine;
 }
 
-function totals25FromLineObject(value) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return totals25FromLines(value);
-  return totals25FromLines(
+function totalsForLine(totalsByLine, line) {
+  const normalizedLine = normalizeGoalsLine(line);
+  if (normalizedLine === null) return emptyTotals25();
+  const totals = totalsByLine?.[String(normalizedLine)] || {};
+  return {
+    line: normalizedLine,
+    over: normalizePrice(totals.over),
+    under: normalizePrice(totals.under),
+  };
+}
+
+function totals25FromLines(lines) {
+  return totalsForLine(totalsByLineFromLines(lines), 2.5);
+}
+
+function totalsByLineFromLineObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return totalsByLineFromLines(value);
+  return totalsByLineFromLines(
     Object.entries(value).map(([line, item]) =>
       item && typeof item === "object" ? { line, ...item } : { line, value: item },
     ),
   );
 }
 
-function mergeTotals25(...items) {
+function totals25FromLineObject(value) {
+  return totalsForLine(totalsByLineFromLineObject(value), 2.5);
+}
+
+function mergeTotalsByLine(...items) {
   return items.reduce((merged, item) => {
-    merged.over ||= item?.over || null;
-    merged.under ||= item?.under || null;
+    for (const totals of Object.values(item || {})) {
+      setTotalsLine(merged, totals.line, totals);
+    }
     return merged;
-  }, emptyTotals25());
+  }, emptyTotalsByLine());
+}
+
+function mergeTotals25(...items) {
+  return totalsForLine(
+    mergeTotalsByLine(...items.map((item) => (item?.line ? { [String(item.line)]: item } : {}))),
+    2.5,
+  );
+}
+
+function dualsoftTotalsByLine(match) {
+  const totalsByLine = emptyTotalsByLine();
+  setTotalsLine(totalsByLine, 2.5, {
+    over: getDualsoftOdd(match, "24"),
+    under: getDualsoftOdd(match, "22"),
+  });
+  setTotalsLine(totalsByLine, 3.5, {
+    over: getDualsoftOdd(match, "25"),
+    under: getDualsoftOdd(match, "219"),
+  });
+
+  return mergeTotalsByLine(
+    totalsByLine,
+    totalsByLineFromLines(Object.values(match.betMap || {}).flatMap((item) => Object.values(item || {}))),
+  );
+}
+
+function nsoftTotalsByLine(event) {
+  const totalsByLine = emptyTotalsByLine();
+  const goalsMarket = Object.values(event.o || {}).find((market) => Number(market.b) === 443);
+  const goalsOutcomes = goalsMarket?.h || [];
+  const outcome = (shortcut) => goalsOutcomes.find((item) => item.e === shortcut)?.g;
+
+  setTotalsLine(totalsByLine, 2.5, { under: outcome("0-2"), over: outcome("3+") });
+  setTotalsLine(totalsByLine, 3.5, { under: outcome("0-3"), over: outcome("4+") });
+  return totalsByLine;
 }
 
 function normalizeDualsoftMatches(bookmaker, payload) {
@@ -481,7 +652,7 @@ function normalizeDualsoftMatches(bookmaker, payload) {
       draw: getDualsoftOdd(match, "2"),
       away: getDualsoftOdd(match, "3"),
     },
-    totals25: totals25FromLines(Object.values(match.betMap || {}).flatMap((item) => Object.values(item || {}))),
+    totalsByLine: dualsoftTotalsByLine(match),
   }));
 }
 
@@ -508,10 +679,7 @@ function getNsoftOdd(event, shortcut) {
 }
 
 function getNsoftTotals25(event) {
-  const markets = Object.values(event.o || {}).filter((market) =>
-    /total|goals|gol|ukupno|2\.5|0-2|3\+/i.test([market.n, market.d, market.m, market.e].filter(Boolean).join(" ")),
-  );
-  return totals25FromLines(markets.flatMap((market) => market.h || []));
+  return totalsForLine(nsoftTotalsByLine(event), 2.5);
 }
 
 function normalizeNsoftMatches(bookmaker, payload) {
@@ -543,7 +711,7 @@ function normalizeNsoftMatches(bookmaker, payload) {
           draw: getNsoftOdd(event, "X"),
           away: getNsoftOdd(event, "2"),
         },
-        totals25: getNsoftTotals25(event),
+        totalsByLine: nsoftTotalsByLine(event),
       };
     });
 }
@@ -579,10 +747,48 @@ function getSuperbetOdd(event, shortcut) {
 }
 
 function getSuperbetTotals25(event) {
-  const markets = (event.markets || []).filter((market) =>
-    /total|goals|gol|ukupno|2\.5/i.test([market.name, market.description, market.metadata?.name].filter(Boolean).join(" ")),
-  );
-  return totals25FromLines(markets.flatMap((market) => market.odds || []));
+  return totalsForLine(getSuperbetTotalsByLine(event), 2.5);
+}
+
+function getSuperbetTotalsByLine(event) {
+  const totalsByLine = emptyTotalsByLine();
+  const goalsMarket = (event.markets || []).find((market) => Number(market.id) === 200734);
+
+  for (const odd of goalsMarket?.odds || []) {
+    if (Number(odd.status) !== 1 || odd.display === false) continue;
+
+    const line = odd.metadata?.specifiers?.total || odd.metadata?.special_bet_value;
+    const name = odd.metadata?.name;
+    const current = totalsByLine[String(normalizeGoalsLine(line))] || {
+      line: normalizeGoalsLine(line),
+      over: null,
+      under: null,
+    };
+
+    if (textLooksOver(name)) current.over ||= normalizePrice(odd.price);
+    if (textLooksUnder(name)) current.under ||= normalizePrice(odd.price);
+    setTotalsLine(totalsByLine, line, current);
+  }
+
+  return totalsByLine;
+}
+
+function mergeSuperbetDetailEvents(summaryEvents, detailEvents) {
+  const detailsById = new Map((Array.isArray(detailEvents) ? detailEvents : []).map((event) => [String(event.event_id), event]));
+
+  return (Array.isArray(summaryEvents) ? summaryEvents : []).map((event) => {
+    const detail = detailsById.get(String(event.event_id));
+    if (!detail) return event;
+    return {
+      ...event,
+      ...detail,
+      fixture: {
+        ...event.fixture,
+        ...detail.fixture,
+      },
+      markets: Array.isArray(detail.markets) && detail.markets.length ? detail.markets : event.markets,
+    };
+  });
 }
 
 function normalizeSuperbetMatches(bookmaker, payload) {
@@ -618,7 +824,7 @@ function normalizeSuperbetMatches(bookmaker, payload) {
           draw: getSuperbetOdd(event, "X"),
           away: getSuperbetOdd(event, "2"),
         },
-        totals25: getSuperbetTotals25(event),
+        totalsByLine: getSuperbetTotalsByLine(event),
       };
     });
 }
@@ -642,11 +848,15 @@ function getOddsApiMlOdds(event, bookmakerName) {
 }
 
 function getOddsApiTotals25(event, bookmakerName) {
+  return totalsForLine(getOddsApiTotalsByLine(event, bookmakerName), 2.5);
+}
+
+function getOddsApiTotalsByLine(event, bookmakerName) {
   const markets = event.bookmakers?.[bookmakerName] || [];
   const totalMarkets = (Array.isArray(markets) ? markets : []).filter((market) =>
     /^(ou|total|totals)$/i.test(String(market.name || "")),
   );
-  return mergeTotals25(...totalMarkets.map((market) => totals25FromLines(market.odds || market.outcomes || [])));
+  return mergeTotalsByLine(...totalMarkets.map((market) => totalsByLineFromLines(market.odds || market.outcomes || [])));
 }
 
 function normalizeOddsApiPrice(value) {
@@ -682,7 +892,7 @@ function normalizeOddsApiMatches(bookmaker, eventsPayload, oddsPayload) {
         kickOffTime: toTimestamp(event.date),
         updatedAt,
         odds: getOddsApiMlOdds(oddsEvent, displayBookmaker.name),
-        totals25: getOddsApiTotals25(oddsEvent, displayBookmaker.name),
+        totalsByLine: getOddsApiTotalsByLine(oddsEvent, displayBookmaker.name),
       };
     });
   });
@@ -749,13 +959,17 @@ function getPinnacleMoneyline(event) {
 }
 
 function getPinnacleTotals25(event) {
+  return totalsForLine(getPinnacleTotalsByLine(event), 2.5);
+}
+
+function getPinnacleTotalsByLine(event) {
   const directTotals = event.totals || event.totalPoints || event.overUnder;
-  if (directTotals) return Array.isArray(directTotals) ? totals25FromLines(directTotals) : totals25FromLineObject(directTotals);
+  if (directTotals) return Array.isArray(directTotals) ? totalsByLineFromLines(directTotals) : totalsByLineFromLineObject(directTotals);
 
   if (event.periods && !Array.isArray(event.periods)) {
     const period = event.periods["0"] || event.periods[0] || {};
     const totals = period.totals || period.totalPoints || period.overUnder;
-    return Array.isArray(totals) ? totals25FromLines(totals) : totals25FromLineObject(totals);
+    return Array.isArray(totals) ? totalsByLineFromLines(totals) : totalsByLineFromLineObject(totals);
   }
 
   const periods = Array.isArray(event.periods) ? event.periods : [];
@@ -765,7 +979,7 @@ function getPinnacleTotals25(event) {
     periods[0] ||
     {};
   const totals = fullGame.totals || fullGame.totalPoints || fullGame.overUnder;
-  return Array.isArray(totals) ? totals25FromLines(totals) : totals25FromLineObject(totals);
+  return Array.isArray(totals) ? totalsByLineFromLines(totals) : totalsByLineFromLineObject(totals);
 }
 
 function getPinnacleTeamNames(event) {
@@ -832,9 +1046,113 @@ function normalizePinnacleMatches(bookmaker, eventsPayload, leaguesPayload) {
           draw: normalizePinnaclePrice(moneyline.draw ?? moneyline.drawPrice),
           away: normalizePinnaclePrice(moneyline.away ?? moneyline.awayPrice),
         },
-        totals25: getPinnacleTotals25(event),
+        totalsByLine: getPinnacleTotalsByLine(event),
       };
     });
+}
+
+function getPs3838Leagues(payload) {
+  if (Array.isArray(payload?.leagues)) return payload.leagues;
+  if (Array.isArray(payload?.value)) return payload.value;
+  if (Array.isArray(payload)) return payload;
+  return [];
+}
+
+function getPs3838LeagueEvents(payload) {
+  return getPs3838Leagues(payload).flatMap((league) => {
+    const events = Array.isArray(league.events) ? league.events : [];
+    return events.map((event) => ({
+      ...event,
+      leagueId: event.leagueId || event.league?.id || league.id,
+      leagueName: event.leagueName || event.league?.name || league.name,
+    }));
+  });
+}
+
+function getPs3838EventId(event) {
+  return event.id || event.eventId || event.event_id;
+}
+
+function getPs3838FullGamePeriod(event) {
+  const periods = Array.isArray(event.periods) ? event.periods : [];
+  return (
+    periods.find((period) => Number(period.number) === 0) ||
+    periods.find((period) => String(period.description || "").toLocaleLowerCase("en-US").includes("match")) ||
+    periods[0] ||
+    {}
+  );
+}
+
+function getPs3838Moneyline(event) {
+  return getPs3838FullGamePeriod(event).moneyline || {};
+}
+
+function getPs3838Totals25(event) {
+  const totals = getPs3838FullGamePeriod(event).totals || [];
+  if (!Array.isArray(totals)) return emptyTotals25();
+
+  const total25 = totals.find((total) => lineIs25(total.points));
+  return {
+    over: normalizePinnaclePrice(total25?.over),
+    under: normalizePinnaclePrice(total25?.under),
+  };
+}
+
+function isPs3838WorldCupEvent(event) {
+  const hasLeagueFilter = PS3838_LEAGUE_IDS.length > 0;
+  const joined = [event.leagueName, event.home, event.away].join(" ");
+  return hasLeagueFilter || (textIncludesWorldCup(joined) && !textIncludesWomensCompetition(joined));
+}
+
+function isPs3838IncludedEvent(event) {
+  const status = String(event.status || "").toLocaleLowerCase("en-US");
+  const liveStatus = Number(event.liveStatus);
+  if (["settled", "cancelled", "canceled"].includes(status)) return false;
+  if (!PS3838_IS_LIVE && Number.isFinite(liveStatus) && liveStatus !== 0) return false;
+  return isPs3838WorldCupEvent(event);
+}
+
+function normalizePs3838Matches(bookmaker, fixturesPayload, oddsPayload) {
+  const fixturesById = new Map(
+    getPs3838LeagueEvents(fixturesPayload)
+      .filter(isPs3838IncludedEvent)
+      .map((event) => [String(getPs3838EventId(event)), event]),
+  );
+
+  return getPs3838LeagueEvents(oddsPayload)
+    .map((oddsEvent) => {
+      const eventId = getPs3838EventId(oddsEvent);
+      const fixture = fixturesById.get(String(eventId));
+      if (!fixture) return null;
+
+      const home = fixture.home || oddsEvent.home;
+      const away = fixture.away || oddsEvent.away;
+      const kickOffTime = fixture.starts || oddsEvent.starts;
+      if (!home || !away || !kickOffTime) return null;
+
+      const moneyline = getPs3838Moneyline(oddsEvent);
+      return {
+        bookmakerId: bookmaker.id,
+        bookmakerName: bookmaker.name,
+        source: "ps3838",
+        matchKey: createMatchKey(home, away, kickOffTime),
+        externalId: eventId,
+        matchCode: fixture.rotNum || fixture.rotationNumber || null,
+        home: normalizeTeamName(home),
+        away: normalizeTeamName(away),
+        leagueName: normalizeCompetitionName(fixture.leagueName || oddsEvent.leagueName),
+        leagueGroup: String(fixture.leagueId || oddsEvent.leagueId || ""),
+        kickOffTime: toTimestamp(kickOffTime),
+        updatedAt: Date.now(),
+        odds: {
+          home: normalizePinnaclePrice(moneyline.home),
+          draw: normalizePinnaclePrice(moneyline.draw),
+          away: normalizePinnaclePrice(moneyline.away),
+        },
+        totals25: getPs3838Totals25(oddsEvent),
+      };
+    })
+    .filter(Boolean);
 }
 
 function normalizeTeamName(value) {
@@ -958,9 +1276,9 @@ function createMatchKey(home, away, kickOffTime) {
   return `${day}:${simplifyTeam(home)}:${simplifyTeam(away)}`;
 }
 
-async function fetchJson(url) {
+async function fetchJson(url, timeoutMs = FEED_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const response = await fetch(url, {
@@ -979,11 +1297,25 @@ async function fetchJson(url) {
 
     return parseJsonPayload(text);
   } catch (error) {
-    if (error.name === "AbortError") throw new Error(`Request timed out after ${FEED_TIMEOUT_MS} ms.`);
+    if (error.name === "AbortError") throw new Error(`Request timed out after ${timeoutMs} ms.`);
     throw error.message?.startsWith("HTTP ") ? error : new Error(`Invalid JSON: ${error.message}`);
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchJsonWithRetry(url, { attempts = 2, timeoutMs = FEED_TIMEOUT_MS } = {}) {
+  let latestError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fetchJson(url, timeoutMs);
+    } catch (error) {
+      latestError = error;
+      if (attempt === attempts) break;
+    }
+  }
+
+  throw latestError;
 }
 
 function pinnacleHeaders() {
@@ -1003,6 +1335,25 @@ async function fetchPinnacleJson(url) {
 
   try {
     const response = await fetch(url, { signal: controller.signal, headers: pinnacleHeaders() });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${text.slice(0, 180)}`);
+    }
+    return parseJsonPayload(text);
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error(`Request timed out after ${FEED_TIMEOUT_MS} ms.`);
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchPs3838Json(url) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal, headers: ps3838Headers() });
     const text = await response.text();
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${text.slice(0, 180)}`);
@@ -1066,9 +1417,9 @@ function extractFirstSseData(buffer) {
   return null;
 }
 
-async function fetchSseSnapshot(url) {
+async function fetchSseSnapshot(url, timeoutMs = FEED_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FEED_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   let onAbort;
   try {
@@ -1129,6 +1480,115 @@ async function fetchSseSnapshot(url) {
   }
 }
 
+async function fetchSuperbetEventDetails(bookmaker, events) {
+  const eventIds = [...new Set((events || []).map((event) => event.event_id).filter(Boolean).map(String))];
+  if (!eventIds.length) return [];
+
+  const chunks = chunkArray(eventIds, SUPERBET_DETAIL_CHUNK_SIZE);
+  const settled = await Promise.allSettled(
+    chunks.map((chunk) => fetchSseSnapshot(superbetEventsUrl(bookmaker, chunk), SUPERBET_DETAIL_TIMEOUT_MS)),
+  );
+  const payloads = settled.filter((result) => result.status === "fulfilled").map((result) => result.value);
+  return payloads.flatMap((payload) => (Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : []));
+}
+
+async function fetchPs3838Snapshot(bookmaker) {
+  const fixturesUrl = ps3838FixturesUrl();
+  const oddsUrl = ps3838OddsUrl("v4");
+  let resolvedOddsUrl = oddsUrl;
+
+  const [fixturesPayload, oddsPayload] = await Promise.all([
+    fetchPs3838Json(fixturesUrl),
+    fetchPs3838Json(oddsUrl).catch(async (error) => {
+      if (!String(error.message || "").startsWith("HTTP 404")) throw error;
+      resolvedOddsUrl = ps3838OddsUrl("v3");
+      return fetchPs3838Json(resolvedOddsUrl);
+    }),
+  ]);
+  const matches = normalizePs3838Matches(bookmaker, fixturesPayload, oddsPayload);
+  const worldCupFixtures = getPs3838LeagueEvents(fixturesPayload).filter(isPs3838IncludedEvent);
+
+  return {
+    bookmaker,
+    status: "ok",
+    url: resolvedOddsUrl,
+    matches,
+    fetchedAt: Date.now(),
+    totalMatches: getPs3838LeagueEvents(fixturesPayload).length,
+    worldCupMatches: worldCupFixtures.length,
+    matchedMatches: matches.length,
+    source: "ps3838",
+  };
+}
+
+async function getPs3838BookmakerFeed(bookmaker) {
+  const configuredUrl = PS3838_LEAGUE_IDS.length ? ps3838OddsUrl("v4") : ps3838LeaguesUrl();
+
+  if (!PS3838_USERNAME || !PS3838_PASSWORD) {
+    return {
+      bookmaker,
+      status: "configured",
+      url: configuredUrl,
+      matches: [],
+      message: "Set PS3838_USERNAME and PS3838_PASSWORD to enable authenticated PS3838 feed.",
+      source: "ps3838",
+    };
+  }
+
+  if (!PS3838_LEAGUE_IDS.length) {
+    return {
+      bookmaker,
+      status: "configured",
+      url: configuredUrl,
+      matches: [],
+      message: "Set PS3838_LEAGUE_IDS after confirming the World Cup league IDs.",
+      source: "ps3838",
+    };
+  }
+
+  const now = Date.now();
+  if (ps3838Cache.result && ps3838Cache.expiresAt > now) {
+    return {
+      ...ps3838Cache.result,
+      cached: true,
+      message: ps3838Cache.result.message || `Using cached PS3838 snapshot for ${PS3838_CACHE_MS} ms.`,
+    };
+  }
+
+  if (!ps3838Cache.promise) {
+    ps3838Cache.promise = fetchPs3838Snapshot(bookmaker)
+      .then((result) => {
+        ps3838Cache.result = result;
+        ps3838Cache.expiresAt = Date.now() + PS3838_CACHE_MS;
+        return result;
+      })
+      .finally(() => {
+        ps3838Cache.promise = null;
+      });
+  }
+
+  try {
+    return await ps3838Cache.promise;
+  } catch (error) {
+    if (ps3838Cache.result) {
+      return {
+        ...ps3838Cache.result,
+        cached: true,
+        message: `Using cached PS3838 snapshot. Latest refresh failed: ${error.message}`,
+      };
+    }
+
+    return {
+      bookmaker,
+      status: "error",
+      url: configuredUrl,
+      matches: [],
+      message: error.message,
+      source: "ps3838",
+    };
+  }
+}
+
 async function fetchBookmaker(bookmaker) {
   if (bookmaker.type === "oddsapi") {
     const eventsUrl = oddsApiEventsUrl();
@@ -1176,6 +1636,10 @@ async function fetchBookmaker(bookmaker) {
   }
 
   if (bookmaker.type === "pinnacle") {
+    if (PS3838_ENABLED) {
+      return getPs3838BookmakerFeed(bookmaker);
+    }
+
     let url = pinnacleLeagueOddsUrl(PINNACLE_LEAGUE_CODE);
 
     try {
@@ -1226,7 +1690,10 @@ async function fetchBookmaker(bookmaker) {
   if (bookmaker.type === "dualsoft") {
     const url = dualsoftOfferUrl(bookmaker.baseUrl);
     try {
-      const payload = await fetchJson(url);
+      const payload = await fetchJsonWithRetry(url, {
+        attempts: bookmaker.id === "maxbet" ? 3 : 2,
+        timeoutMs: bookmaker.id === "maxbet" ? Math.max(FEED_TIMEOUT_MS, 15000) : FEED_TIMEOUT_MS,
+      });
       const matches = normalizeDualsoftMatches(bookmaker, payload);
       return {
         bookmaker,
@@ -1275,14 +1742,26 @@ async function fetchBookmaker(bookmaker) {
     const url = superbetWorldCupUrl(bookmaker);
     try {
       const payload = await fetchSseSnapshot(url);
-      const matches = normalizeSuperbetMatches(bookmaker, payload);
+      const events = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
+      let detailMessage = null;
+      const detailEvents = await fetchSuperbetEventDetails(bookmaker, events).catch((error) => {
+        detailMessage = `Superbet detail markets failed: ${error.message}`;
+        return [];
+      });
+      if (!detailMessage && detailEvents.length < events.length) {
+        detailMessage = `Loaded Superbet detail markets for ${detailEvents.length}/${events.length} events.`;
+      }
+      const mergedPayload = mergeSuperbetDetailEvents(events, detailEvents);
+      const matches = normalizeSuperbetMatches(bookmaker, mergedPayload);
       return {
         bookmaker,
         status: "ok",
         url,
         matches,
         fetchedAt: Date.now(),
-        totalMatches: Array.isArray(payload) ? payload.length : 0,
+        totalMatches: events.length,
+        detailMatches: detailEvents.length,
+        message: detailMessage,
       };
     } catch (error) {
       return {
@@ -1324,6 +1803,7 @@ function emptyBookmakerMap() {
         isReference: Boolean(bookmaker.isReference),
         odds: { home: null, draw: null, away: null },
         totals25: emptyTotals25(),
+        totalsByLine: emptyTotalsByLine(),
         updatedAt: null,
         externalId: null,
       },
@@ -1338,6 +1818,7 @@ function makeMatchRow(offer, truthSource = null) {
     away: offer.away,
     leagueName: offer.leagueName,
     kickOffTime: offer.kickOffTime,
+    goalsLine: null,
     sourceOfTruth: truthSource?.bookmakerId || null,
     sourceExternalId: truthSource?.externalId || null,
     bookmakers: emptyBookmakerMap(),
@@ -1350,6 +1831,7 @@ function attachOffer(row, offer) {
     bookmakerName: offer.bookmakerName,
     isReference: Boolean(offer.isReference),
     odds: offer.odds,
+    totalsByLine: offer.totalsByLine || emptyTotalsByLine(),
     totals25: offer.totals25 || emptyTotals25(),
     updatedAt: offer.updatedAt,
     externalId: offer.externalId,
@@ -1424,6 +1906,26 @@ function shinNoVigOdds(values) {
   );
 }
 
+function hasCompleteTotals(totals) {
+  return isValidDecimalOdd(totals?.over) && isValidDecimalOdd(totals?.under);
+}
+
+function chooseGoalsLine(match) {
+  const pinnacleTotals = match.bookmakers.pinnacle?.totalsByLine || {};
+  if (hasCompleteTotals(totalsForLine(pinnacleTotals, 2.5))) return 2.5;
+  if (hasCompleteTotals(totalsForLine(pinnacleTotals, 3.5))) return 3.5;
+  return null;
+}
+
+function applySelectedGoalsLine(match) {
+  const goalsLine = chooseGoalsLine(match);
+  match.goalsLine = goalsLine;
+
+  for (const entry of Object.values(match.bookmakers)) {
+    entry.totals25 = goalsLine === null ? emptyTotals25() : totalsForLine(entry.totalsByLine, goalsLine);
+  }
+}
+
 function applyPinnacleShinNoVig(match) {
   const pinnacle = match.bookmakers.pinnacle;
   const [home, draw, away] = shinNoVigOdds([
@@ -1441,7 +1943,8 @@ function applyPinnacleShinNoVig(match) {
     bookmakerName: PINNACLE_SHIN_BOOKMAKER.name,
     isReference: true,
     odds: { home, draw, away },
-    totals25: { over, under },
+    totalsByLine: match.goalsLine === null ? emptyTotalsByLine() : { [String(match.goalsLine)]: { line: match.goalsLine, over, under } },
+    totals25: { line: match.goalsLine, over, under },
     updatedAt: pinnacle?.updatedAt || null,
     externalId: pinnacle?.externalId || null,
   };
@@ -1487,6 +1990,7 @@ function aggregateMatches(results) {
 
   return Array.from(byMatch.values())
     .map((match) => {
+      applySelectedGoalsLine(match);
       applyPinnacleShinNoVig(match);
       return {
         ...match,
@@ -1587,6 +2091,45 @@ function buildOpportunities(matches) {
     .slice(0, 8);
 }
 
+function isLocalRequest(req) {
+  const rawHost = String(req.headers.host || "");
+  const host = rawHost.startsWith("[") ? rawHost.slice(0, rawHost.indexOf("]") + 1) : rawHost.split(":")[0];
+  return ["localhost", "127.0.0.1", "::1", "[::1]"].includes(host);
+}
+
+async function getPs3838LeaguesPayload() {
+  const url = ps3838LeaguesUrl();
+
+  if (!PS3838_USERNAME || !PS3838_PASSWORD) {
+    return {
+      status: "configured",
+      source: "ps3838",
+      url,
+      leagues: [],
+      message: "Set PS3838_USERNAME and PS3838_PASSWORD to inspect PS3838 leagues.",
+    };
+  }
+
+  const payload = await fetchPs3838Json(url);
+  const leagues = getPs3838Leagues(payload).map((league) => ({
+    id: league.id,
+    name: league.name || league.englishName,
+    sportId: league.sportId || PS3838_SPORT_ID,
+    eventCount: league.eventCount ?? league.totalEvents ?? null,
+    isWorldCupCandidate: textIncludesWorldCup([league.name, league.englishName].join(" ")),
+  }));
+
+  return {
+    status: "ok",
+    source: "ps3838",
+    url,
+    generatedAt: Date.now(),
+    totalLeagues: leagues.length,
+    candidates: leagues.filter((league) => league.isWorldCupCandidate),
+    leagues,
+  };
+}
+
 export async function getOddsPayload() {
   const startedAt = Date.now();
   const settled = await Promise.all(FEED_BOOKMAKERS.map(fetchBookmaker));
@@ -1607,6 +2150,8 @@ export async function getOddsPayload() {
       bookmakerName: result.bookmaker.name,
       status: result.status,
       url: result.url,
+      source: result.source || result.bookmaker.type,
+      cached: Boolean(result.cached),
       totalMatches: result.totalMatches || 0,
       worldCupMatches: result.worldCupMatches ?? result.matches.length,
       matchedMatches: result.matchedMatches ?? result.worldCupMatches ?? result.matches.length,
@@ -1632,6 +2177,15 @@ export function getHealthPayload() {
 
 async function handleOdds(req, res) {
   sendJson(res, 200, await getOddsPayload());
+}
+
+async function handlePs3838Leagues(req, res) {
+  if (!isLocalRequest(req)) {
+    sendJson(res, 403, { error: "PS3838 league discovery is only available from localhost." });
+    return;
+  }
+
+  sendJson(res, 200, await getPs3838LeaguesPayload());
 }
 
 async function handleStatic(req, res) {
@@ -1664,6 +2218,11 @@ if (process.argv[1] && normalize(process.argv[1]) === normalize(join(projectDir,
 
       if (url.pathname === "/api/health") {
         sendJson(res, 200, getHealthPayload());
+        return;
+      }
+
+      if (url.pathname === "/api/ps3838/leagues") {
+        await handlePs3838Leagues(req, res);
         return;
       }
 

@@ -527,6 +527,8 @@ select,
 .odd-cell {
   width: 54px;
   font-weight: 800;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
 }
 
 .odd-cell.group-start,
@@ -563,6 +565,10 @@ select,
   background: #fafbf9;
 }
 
+.odd-cell.is-changing {
+  animation: odds-pulse 10s ease-out;
+}
+
 .margin-cell {
   width: 78px;
   color: var(--amber);
@@ -596,6 +602,34 @@ select,
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes odds-pulse {
+  0%,
+  18%,
+  36% {
+    outline-color: rgba(12, 122, 67, 0.75);
+    box-shadow:
+      inset 0 0 0 1px rgba(12, 122, 67, 0.38),
+      0 0 0 0 rgba(12, 122, 67, 0.38);
+    filter: brightness(1.08);
+  }
+
+  9%,
+  27%,
+  45% {
+    outline-color: rgba(185, 119, 7, 0.85);
+    box-shadow:
+      inset 0 0 0 1px rgba(185, 119, 7, 0.4),
+      0 0 0 5px rgba(185, 119, 7, 0.18);
+    filter: brightness(1.12);
+  }
+
+  100% {
+    outline-color: transparent;
+    box-shadow: inherit;
+    filter: none;
   }
 }
 
