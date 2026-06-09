@@ -32,6 +32,7 @@ const state = {
   search: "",
   view: "all",
   noVigLimitPercent: 1,
+  oddsThresholdPercent: 3,
   oddsSnapshot: new Map(),
   changedOddsUntil: new Map(),
 };
@@ -57,6 +58,8 @@ const els = {
   oddsHead: document.querySelector("#oddsHead"),
   oddsBody: document.querySelector("#oddsBody"),
   oddsTable: document.querySelector(".odds-table"),
+  valueTickerWrap: document.querySelector("#valueTickerWrap"),
+  valueTicker: document.querySelector("#valueTicker"),
 };
 
 function formatOdd(value) {
@@ -828,6 +831,77 @@ function renderSummary(matches) {
         : `${matches.length} World Cup mec(eva), ${state.data?.elapsedMs || 0} ms proxy vreme.`);
 }
 
+function updateValueTicker(matches) {
+  if (!matches || !matches.length) {
+    els.valueTickerWrap.style.display = "none";
+    return;
+  }
+
+  const valueBets = [];
+  const bookmakers = state.data?.bookmakers || bookmakerOrder.map((id) => ({ id, name: id }));
+  const bookmakerMap = new Map(bookmakers.map((b) => [b.id, b]));
+
+  let outcomesToCheck = [];
+  if (state.view === "goals") {
+    outcomesToCheck = ["over25", "under25"];
+  } else if (state.view === "today") {
+    outcomesToCheck = ["home", "draw", "away", "over25", "under25"];
+  } else {
+    outcomesToCheck = ["home", "draw", "away"];
+  }
+
+  for (const match of matches) {
+    const pinnacleShin = match.bookmakers?.pinnacle_shin;
+    if (!pinnacleShin) continue;
+
+    for (const outcome of outcomesToCheck) {
+      const noVig = outcomeValue(pinnacleShin, outcome);
+      if (!isValidOdd(noVig)) continue;
+
+      for (const [bookmakerId, entry] of Object.entries(match.bookmakers || {})) {
+        if (entry.isReference || bookmakerId === "pinnacle_shin" || bookmakerId === "betfair_lay") continue;
+        if (!state.enabledBookmakers.has(bookmakerId) || !bookmakerMap.has(bookmakerId)) continue;
+
+        const odd = outcomeValue(entry, outcome);
+        if (!isValidOdd(odd)) continue;
+
+        const edge = ((Number(odd) / Number(noVig)) - 1) * 100;
+        if (edge > 0) {
+          const outcomeLabel = outcome === "over25" || outcome === "under25" 
+            ? goalsOutcomeLabel(match, outcome) 
+            : marketLabels[outcome];
+
+          valueBets.push({
+            matchup: `${match.home} - ${match.away}`,
+            outcomeLabel,
+            odd: Number(odd),
+            bookmaker: entry.bookmakerName,
+            edge: edge,
+          });
+        }
+      }
+    }
+  }
+
+  valueBets.sort((a, b) => b.edge - a.edge);
+
+  if (valueBets.length === 0) {
+    els.valueTicker.innerHTML = `<span class="ticker-item">Trenutno nema value kvota iznad Pinnacle no-vig reference.</span>`;
+    els.valueTickerWrap.style.display = "flex";
+    return;
+  }
+
+  const topValueBets = valueBets.slice(0, 10);
+  const tickerHtml = topValueBets
+    .map((bet) => {
+      return `<span class="ticker-item"><strong>${bet.matchup}</strong> (${bet.outcomeLabel}) @ <strong>${bet.odd.toFixed(2)}</strong> (${bet.bookmaker}) <span style="color: var(--green); font-weight: 700;">+${bet.edge.toFixed(1)}%</span></span>`;
+    })
+    .join("");
+
+  els.valueTicker.innerHTML = tickerHtml + tickerHtml; // Double it for seamless loop scrolling
+  els.valueTickerWrap.style.display = "flex";
+}
+
 function render() {
   renderBookmakerToggles();
   const matches = visibleMatches();
@@ -836,7 +910,9 @@ function render() {
   renderHead();
   renderRows(matches);
   renderSummary(matches);
+  updateValueTicker(matches);
 }
+
 
 els.refreshButton.addEventListener("click", loadOdds);
 els.searchInput.addEventListener("input", (event) => {
