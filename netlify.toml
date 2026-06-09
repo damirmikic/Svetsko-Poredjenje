@@ -5,6 +5,10 @@
 
 [functions]
   node_bundler = "esbuild"
+  external_node_modules = ["node:http", "node:fs", "node:fs/promises", "node:path"]
+
+[functions."odds"]
+  timeout = 26
 
 [[redirects]]
   from = "/api/odds"
