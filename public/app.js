@@ -127,6 +127,32 @@ function getOutcomeToastLabel(match, outcome) {
   return marketLabels[outcome] || outcome;
 }
 
+function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+  return Promise.resolve();
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function showOddsChangeNotification(changes) {
   let backdrop = document.querySelector(".notification-backdrop");
   if (!backdrop) {
@@ -155,6 +181,29 @@ function showOddsChangeNotification(changes) {
         backdrop.classList.remove("show");
       }
     });
+    backdrop.addEventListener("click", async (e) => {
+      const copyButton = e.target.closest(".notification-copy");
+      if (!copyButton) return;
+
+      e.stopPropagation();
+      const text = copyButton.dataset.copy || "";
+      if (!text) return;
+
+      try {
+        await copyTextToClipboard(text);
+        copyButton.textContent = "Copied";
+        copyButton.classList.add("is-copied");
+        window.setTimeout(() => {
+          copyButton.textContent = "Copy";
+          copyButton.classList.remove("is-copied");
+        }, 1200);
+      } catch {
+        copyButton.textContent = "Failed";
+        window.setTimeout(() => {
+          copyButton.textContent = "Copy";
+        }, 1200);
+      }
+    });
   }
 
   const list = backdrop.querySelector(".notification-list");
@@ -169,9 +218,15 @@ function showOddsChangeNotification(changes) {
       const badgeClass = isUp ? "up" : "down";
       const icon = isUp ? "↑" : "↓";
 
+      const matchup = `${match.home} vs ${match.away}`;
+      const escapedMatchup = escapeHtml(matchup);
+
       return `
         <div class="notification-item">
-          <div class="notification-match">${match.home} vs ${match.away}</div>
+          <div class="notification-match-row">
+            <div class="notification-match">${escapedMatchup}</div>
+            <button class="notification-copy" type="button" data-copy="${escapedMatchup}">Copy</button>
+          </div>
           <div class="notification-detail">
             <span class="notification-meta">${bName} · ${label}</span>
             <div class="notification-change-box">

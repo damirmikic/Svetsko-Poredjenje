@@ -783,10 +783,40 @@ select,
   gap: 6px;
 }
 
+.notification-match-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .notification-match {
   font-weight: 700;
   font-size: 14px;
   color: #fff;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.notification-copy {
+  flex: 0 0 auto;
+  border: 1px solid rgba(164, 205, 175, 0.35);
+  background: rgba(164, 205, 175, 0.08);
+  color: #a4cdaf;
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.notification-copy:hover,
+.notification-copy.is-copied {
+  background: rgba(164, 205, 175, 0.18);
+  border-color: rgba(164, 205, 175, 0.6);
+  color: #f7fff9;
 }
 
 .notification-detail {
