@@ -236,12 +236,26 @@ function showOddsChangeNotification(changes) {
             </div>
           </div>
         </div>
+            <span class="notification-meta">${bName} · ${label}</span>
+            <div class="notification-change-box">
+              <span class="notification-odd-transition">${change.oldValue.toFixed(2)} &rarr;</span>
+              <span class="notification-badge ${badgeClass}">${icon} ${change.newValue.toFixed(2)}</span>
+            </div>
+          </div>
+        </div>
       `;
     })
     .filter(Boolean)
     .join("");
 
   backdrop.classList.add("show");
+  
+  if (backdrop.hideTimeout) {
+    clearTimeout(backdrop.hideTimeout);
+  }
+  backdrop.hideTimeout = setTimeout(() => {
+    backdrop.classList.remove("show");
+  }, 15000);
 }
 
 function trackChangedOdds(previousSnapshot, nextSnapshot) {
