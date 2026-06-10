@@ -973,21 +973,21 @@ function favoriteMaxOdds(match) {
 }
 
 function goalsMaxOdds(match) {
+  const reference = match.bookmakers?.[primaryReferenceBookmaker];
   const candidates = totalGoalsOutcomes
     .map((outcome) => ({
       outcome,
-      value: Number(outcomeBest(match, outcome)?.value),
+      value: Number(outcomeValue(reference, outcome)),
     }))
-    .filter((item) => isValidOdd(item.value))
-    .sort((a, b) => b.value - a.value);
+    .filter((item) => isValidOdd(item.value));
 
-  const top = candidates[0];
-  if (!top) return null;
+  if (!candidates.length) return null;
 
+  const favorite = candidates.sort((a, b) => a.value - b.value)[0];
   return {
-    outcome: top.outcome,
-    label: goalsOutcomeLabel(match, top.outcome),
-    value: top.value,
+    outcome: favorite.outcome,
+    label: goalsOutcomeLabel(match, favorite.outcome),
+    value: favorite.value * (1 + state.noVigLimitPercent / 100),
   };
 }
 
