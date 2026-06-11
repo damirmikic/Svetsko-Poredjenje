@@ -1065,6 +1065,41 @@ function renderHead() {
   `;
 }
 
+function formatMoneyFlow(amount) {
+  if (!amount || amount <= 0) return null;
+  if (amount >= 1000000) return `€${(amount / 1000000).toFixed(1)}M`;
+  if (amount >= 1000) return `€${(amount / 1000).toFixed(0)}K`;
+  return `€${Math.floor(amount)}`;
+}
+
+function renderMoneyFlowChart(history, outcome) {
+  if (!history || history.length < 2) return "";
+  
+  const data = [...history].reverse().map(h => outcome ? (h[outcome] || 0) : (h.home + h.draw + h.away));
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  
+  if (max === 0 || max === min) return "";
+  
+  const width = 80;
+  const height = 16;
+  const padding = 2;
+  
+  const points = data.map((val, i) => {
+    const x = padding + (i / (data.length - 1)) * (width - 2 * padding);
+    const y = height - padding - ((val - min) / (max - min)) * (height - 2 * padding);
+    return `${x},${y}`;
+  }).join(" ");
+  
+  return `
+    <div class="money-flow-chart-wrap" title="Betfair matched volume history">
+      <svg class="money-flow-chart" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+        <polyline points="${points}" fill="none" stroke="var(--green)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+  `;
+}
+
 function renderRows(matches) {
   const bookmakerMap = new Map((state.data?.bookmakers || []).map((bookmaker) => [bookmaker.id, bookmaker]));
   const enabled = bookmakerOrder.filter((id) => state.enabledBookmakers.has(id) && bookmakerMap.has(id));
@@ -1098,6 +1133,11 @@ function renderRows(matches) {
     .map((match) => {
       const maxOdds = marketMaxOdds(match);
       const margin = marketMargin(match);
+
+      const bfMoneyFlow = match.bookmakers?.betfair_lay?.bfMoneyFlow || match.bfMoneyFlow;
+      const bfMoneyFlowHistory = match.bookmakers?.betfair_lay?.bfMoneyFlowHistory || match.bfMoneyFlowHistory;
+      const totalMatched = bfMoneyFlow ? (bfMoneyFlow.home || 0) + (bfMoneyFlow.draw || 0) + (bfMoneyFlow.away || 0) : 0;
+      const formattedMatched = totalMatched > 0 ? formatMoneyFlow(totalMatched) : null;
       const oddsCells = enabled
         .map((bookmakerId) => {
           const entry = match.bookmakers[bookmakerId];
@@ -1124,7 +1164,23 @@ function renderRows(matches) {
                   : moveDirection === "down"
                     ? `<span class="odd-move-arrow" aria-label="Kvota pada">&darr;</span>`
                     : "";
-              return `<td class="${className}"><span class="odd-value">${formatOdd(value)}</span>${moveArrow}</td>`;
+                    
+              let moneyFlowHtml = "";
+              if (bookmakerId === "betfair_lay" && bfMoneyFlow && bfMoneyFlow[outcome]) {
+                const flow = formatMoneyFlow(bfMoneyFlow[outcome]);
+                const chart = renderMoneyFlowChart(bfMoneyFlowHistory, outcome);
+                moneyFlowHtml = `
+                  <div class="money-flow-outcome">
+                    <span class="money-flow-val">${flow}</span>
+                    ${chart}
+                  </div>
+                `;
+              }
+
+              return `<td class="${className}">
+                <span class="odd-value">${formatOdd(value)}</span>${moveArrow}
+                ${moneyFlowHtml}
+              </td>`;
             })
             .join("");
         })
@@ -1133,9 +1189,14 @@ function renderRows(matches) {
       return `
         <tr>
           <td class="match-cell">
-            <span class="kickoff">${formatTime(match.kickOffTime)}</span>
+            <div class="match-cell-top">
+              <span class="kickoff">${formatTime(match.kickOffTime)}</span>
+              ${formattedMatched ? `<span class="money-flow-total" title="Betfair Matched Volume">${formattedMatched}</span>` : ""}
+            </div>
             <strong>${match.home} <span>vs</span> ${match.away}</strong>
-            <small>${match.leagueName}${match.goalsLine && state.view !== "all" ? ` · golovi ${formatGoalsLine(match.goalsLine)}` : ""}</small>
+            <div class="match-cell-bottom">
+              <small>${match.leagueName}${match.goalsLine && state.view !== "all" ? ` · golovi ${formatGoalsLine(match.goalsLine)}` : ""}</small>
+            </div>
           </td>
           <td class="max-cell">
             ${

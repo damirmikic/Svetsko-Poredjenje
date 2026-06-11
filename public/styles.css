@@ -986,3 +986,45 @@ select,
   }
 }
 
+
+.money-flow-outcome {
+  position: relative;
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--green);
+  text-align: center;
+  font-weight: 700;
+  cursor: help;
+}
+
+.money-flow-chart-popup {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  padding: 4px;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  display: none;
+  z-index: 100;
+  white-space: nowrap;
+  pointer-events: none;
+  margin-bottom: 6px;
+}
+
+.money-flow-outcome:hover .money-flow-chart-popup {
+  display: block;
+}
+
+.money-flow-chart {
+  display: block;
+}
+
+.money-flow-val {
+  background: rgba(14, 161, 83, 0.1);
+  padding: 2px 4px;
+  border-radius: 3px;
+}

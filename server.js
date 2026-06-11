@@ -153,6 +153,66 @@ const oddsmathCache = {
   result: null,
 };
 
+const btfoddsCache = {
+  expiresAt: 0,
+  promise: null,
+  result: null,
+  history: {},
+};
+
+async function fetchBtfOdds() {
+  const url = 'https://www.btfodds.com/classes/soccer/football-odds-trends/money-way-ajax.php?alldata=%7B%22id%22:%221%22,%22sport%22:%22soccer%22,%22pg%22:%22soccer/football-odds-trends/money-way%22,%22date%22:%22next-3days%22,%22country%22:%22all%22,%22bookie%22:%2212X%22,%22type%22:%22league%22,%22sort%22:%22OV%22,%22oddType%22:%22eu%22,%22tz%22:%22%22,%22upd%22:5%7D';
+  try {
+    const res = await fetch(url, {
+      headers: {
+        "X-Requested-With": "XMLHttpRequest",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html, */*; q=0.01",
+      }
+    });
+    const html = await res.text();
+    const matches = {};
+    let currentLeague = "";
+    const rows = html.split('<tr ');
+    for (const row of rows) {
+      if (!row.trim()) continue;
+      if (row.includes('class="league"')) {
+        const match = row.match(/<span class="sort">([^<]+)<\/span>/);
+        if (match) currentLeague = match[1].trim();
+        continue;
+      }
+      if (row.includes('class="mw"') && currentLeague.includes('World Cup')) {
+        let home = null;
+        let away = null;
+        const aTagMatch = row.match(/<td class="event"><a[^>]*>(.*?)<\/a><\/td>/);
+        if (aTagMatch) {
+          const cleaned = aTagMatch[1].replace(/<[^>]+>/g, '').split(' VS ');
+          if (cleaned.length === 2) { home = cleaned[0].trim(); away = cleaned[1].trim(); }
+        }
+        if (!home || !away) continue;
+
+        const volumeMatches = [...row.matchAll(/data-volume="([\d.]+)"/g)];
+        const vol1 = volumeMatches[0] ? Number(volumeMatches[0][1]) : 0;
+        const volX = volumeMatches[1] ? Number(volumeMatches[1][1]) : 0;
+        const vol2 = volumeMatches[2] ? Number(volumeMatches[2][1]) : 0;
+        
+        const matchKey = createMatchKey(home, away, null);
+        matches[matchKey] = { home: vol1, draw: volX, away: vol2, updated: Date.now() };
+        
+        if (!btfoddsCache.history[matchKey]) btfoddsCache.history[matchKey] = [];
+        btfoddsCache.history[matchKey].push(matches[matchKey]);
+        if (btfoddsCache.history[matchKey].length > 50) {
+          btfoddsCache.history[matchKey].shift();
+        }
+      }
+    }
+    return matches;
+  } catch (err) {
+    console.error("BTFOdds fetch error:", err);
+    return null;
+  }
+}
+
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -1321,6 +1381,8 @@ async function fetchOddsmathMatches() {
   }
 
   const matches = [];
+  const btfoddsData = await fetchBtfOdds();
+  
   const chunkSize = 15;
   for (let i = 0; i < events.length; i += chunkSize) {
     const chunk = events.slice(i, i + chunkSize);
@@ -1362,6 +1424,35 @@ async function fetchOddsmathMatches() {
         } : { over: null, under: null };
 
         const kickOffTime = event.time ? new Date(event.time + "Z").getTime() : null;
+        const matchKeyForBtf = createMatchKey(event.home, event.away, null);
+
+        let bfMoneyFlow = null;
+        let bfMoneyFlowHistory = [];
+        if (btfoddsData && btfoddsData[matchKeyForBtf]) {
+          const btf = btfoddsData[matchKeyForBtf];
+          bfMoneyFlow = {
+            home: btf.home,
+            draw: btf.draw,
+            away: btf.away
+          };
+          bfMoneyFlowHistory = btfoddsCache.history[matchKeyForBtf] || [];
+        } else {
+          // Fallback to oddsmath if btfodds didn't have it
+          const bfBack = eventData0.Betfair?.live_exchange_back;
+          bfMoneyFlow = bfBack ? {
+            home: Number(bfBack.amount_1 || 0),
+            draw: Number(bfBack.amount_X || 0),
+            away: Number(bfBack.amount_2 || 0)
+          } : null;
+
+          const bfBackHistoryRaw = eventData0.Betfair?.history_exchange_back || [];
+          bfMoneyFlowHistory = bfBackHistoryRaw.map(item => ({
+            updated: item.updated,
+            home: Number(item.amount_1 || 0),
+            draw: Number(item.amount_X || 0),
+            away: Number(item.amount_2 || 0)
+          }));
+        }
 
         matches.push({
           eventId: event.id,
@@ -1372,6 +1463,8 @@ async function fetchOddsmathMatches() {
           biaTotals,
           bfOdds,
           bfTotals,
+          bfMoneyFlow,
+          bfMoneyFlowHistory,
         });
       } catch (err) {
         console.warn(`Failed to fetch live odds for event ${event.id}:`, err.message);
@@ -1415,6 +1508,8 @@ function getOddsmathMatchesForBookmaker(bookmaker, allOddsmathMatches) {
       updatedAt: Date.now(),
       odds,
       totalsByLine,
+      bfMoneyFlow: bookmaker.id === "betfair_lay" ? item.bfMoneyFlow : undefined,
+      bfMoneyFlowHistory: bookmaker.id === "betfair_lay" ? item.bfMoneyFlowHistory : undefined,
     };
   });
 }
@@ -1710,6 +1805,8 @@ function attachOffer(row, offer) {
     updatedAt: offer.updatedAt,
     externalId: offer.externalId,
     timeDiff: newDiff,
+    bfMoneyFlow: offer.bfMoneyFlow,
+    bfMoneyFlowHistory: offer.bfMoneyFlowHistory,
   };
 }
 
