@@ -98,7 +98,7 @@ const BOOKMAKERS = [
     id: "mozzartbet",
     name: "Mozzart",
     type: "mozzartbet",
-    baseUrl: "https://www.mozzartbet.com",
+    baseUrl: "https://www.mozzartbet.ng",
   },
   {
     id: "superbet",
@@ -735,56 +735,6 @@ function normalizeSuperbetMatches(bookmaker, payload) {
     });
 }
 
-function normalizeMozzartbetMatches(bookmaker, payload) {
-  const items = Array.isArray(payload?.items) ? payload.items : [];
-
-  return items.map((item) => {
-    const home = item.home?.name || "";
-    const away = item.visitor?.name || "";
-    const kickOffTime = Number(item.startTime) || null;
-
-    const outcomeGroup = (name) => item.oddsGroup?.find((g) => g.groupName === name);
-
-    const getOdd = (groupName, subgameName) => {
-      const g = outcomeGroup(groupName);
-      const o = g?.odds?.find((odd) => odd.subgame?.name === subgameName);
-      return o?.value ? Number(o.value) : null;
-    };
-
-    const homeOdd = getOdd("Konačan ishod", "1");
-    const drawOdd = getOdd("Konačan ishod", "X");
-    const awayOdd = getOdd("Konačan ishod", "2");
-
-    const over25 = getOdd("Ukupno golova na meču", "3+");
-    const under25 = getOdd("Ukupno golova na meču", "0-2");
-
-    const totalsByLine = emptyTotalsByLine();
-    if (over25 !== null || under25 !== null) {
-      setTotalsLine(totalsByLine, 2.5, { over: over25, under: under25 });
-    }
-
-    return {
-      bookmakerId: bookmaker.id,
-      bookmakerName: bookmaker.name,
-      source: bookmaker.type,
-      matchKey: createMatchKey(home, away, kickOffTime),
-      externalId: item.id,
-      matchCode: item.matchNumber,
-      home: normalizeTeamName(home),
-      away: normalizeTeamName(away),
-      leagueName: "World Cup 2026",
-      leagueGroup: String(item.competition?.id || ""),
-      kickOffTime,
-      updatedAt: Date.now(),
-      odds: {
-        home: homeOdd,
-        draw: drawOdd,
-        away: awayOdd,
-      },
-      totalsByLine,
-    };
-  });
-}
 
 function getPinnacleLeagues(payload) {
   if (Array.isArray(payload?.value)) return payload.value;
@@ -980,6 +930,8 @@ function normalizeTeamName(value) {
     ["ir iran", "Iran"],
     ["korea republic", "South Korea"],
     ["juzna koreja", "South Korea"],
+    ["s korea", "South Korea"],
+    ["skorea", "South Korea"],
     ["turkiye", "Turkey"],
     ["turska", "Turkey"],
     ["usa", "United States"],
@@ -1011,6 +963,8 @@ function normalizeTeamName(value) {
     ["meksiko", "Mexico"],
     ["nemacka", "Germany"],
     ["novi zeland", "New Zealand"],
+    ["n zealand", "New Zealand"],
+    ["nzealand", "New Zealand"],
     ["norveska", "Norway"],
     ["obala slonovace", "Ivory Coast"],
     ["panama", "Panama"],
@@ -1027,6 +981,11 @@ function normalizeTeamName(value) {
     ["uzbekistan", "Uzbekistan"],
     ["zelenortska ostrva", "Cape Verde"],
     ["juzna afrika", "South Africa"],
+    ["s africa", "South Africa"],
+    ["safrica", "South Africa"],
+    ["b and h", "Bosnia and Herzegovina"],
+    ["bandh", "Bosnia and Herzegovina"],
+    ["czech r", "Czech Republic"],
   ]);
 
   return aliases.get(canonical) || clean;
@@ -1247,76 +1206,161 @@ async function fetchSseSnapshot(url, timeoutMs = FEED_TIMEOUT_MS) {
 }
 
 
-async function fetchMozzartbetPage(page, timeoutMs = FEED_TIMEOUT_MS) {
-  const url = "https://www.mozzartbet.com/betting/matches";
+async function fetchMozzartbetMatches(bookmaker, timeoutMs = FEED_TIMEOUT_MS) {
+  const urlOffer = "https://www.mozzartbet.ng/betOffer2";
+  const urlOdds = "https://www.mozzartbet.ng/getBettingOdds";
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  const payload = {
-    date: "all_days",
-    sort: "bycompetition",
-    currentPage: page,
-    pageSize: 50,
-    sportId: 1,
-    competitionIds: [12211],
-    search: "",
-    matchTypeId: 0,
-  };
-
   try {
-    const response = await fetch(url, {
+    const offerPayload = {
+      date: "all",
+      sportIds: [1],
+      competitionIds: [],
+      sort: "bycompetition",
+      size: 1000,
+      type: "betting",
+      lang: "en",
+      offset: 0
+    };
+
+    const offerResponse = await fetch(urlOffer, {
       method: "POST",
       signal: controller.signal,
       headers: {
         accept: "application/json, text/plain, */*",
         "content-type": "application/json",
-        medium: "PREMATCH_WEB",
-        origin: "https://www.mozzartbet.com",
-        referer: "https://www.mozzartbet.com/sr/kladjenje/sport/1?date=all_days",
-        "user-agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        origin: "https://www.mozzartbet.ng",
+        "user-agent": "Mozilla/5.0",
       },
-      body: JSON.stringify(payload),
+      body: JSON.stringify(offerPayload),
     });
 
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`HTTP ${response.status}: ${text.slice(0, 150)}`);
+    if (!offerResponse.ok) {
+      const text = await offerResponse.text();
+      throw new Error(`HTTP ${offerResponse.status}: ${text.slice(0, 150)}`);
     }
 
-    return await response.json();
+    const offerData = await offerResponse.json();
+    const allItems = Array.isArray(offerData?.matches) ? offerData.matches : [];
+
+    const worldCupItems = allItems.filter(match => {
+      const home = match.participants?.[0]?.name;
+      const away = match.participants?.[1]?.name;
+      const joined = [
+        match.competition?.name,
+        home,
+        away,
+      ].join(" ");
+
+      return textIncludesWorldCup(joined) && !textIncludesWomensCompetition(joined);
+    });
+
+    let oddsData = [];
+    if (worldCupItems.length > 0) {
+      const matchIds = worldCupItems.map(m => m.id);
+      
+      // MozzartBet NG limits getBettingOdds requests, fetch in chunks of 30 concurrently
+      const fetchPromises = [];
+      for (let i = 0; i < matchIds.length; i += 30) {
+        const chunk = matchIds.slice(i, i + 30);
+        const oddsPayload = {
+          matchIds: chunk,
+          subgames: [1001001001, 1001001002, 1001001003, 1001003002, 1001003004]
+        };
+
+        fetchPromises.push(
+          fetch(urlOdds, {
+            method: "POST",
+            signal: controller.signal,
+            headers: {
+              accept: "application/json, text/plain, */*",
+              "content-type": "application/json",
+              origin: "https://www.mozzartbet.ng",
+              "user-agent": "Mozilla/5.0",
+            },
+            body: JSON.stringify(oddsPayload),
+          }).then(async res => {
+            if (!res.ok) {
+              const text = await res.text();
+              throw new Error(`HTTP ${res.status}: ${text.slice(0, 150)}`);
+            }
+            return res.json();
+          })
+        );
+      }
+      
+      const chunksData = await Promise.all(fetchPromises);
+      chunksData.forEach(chunkData => {
+        if (Array.isArray(chunkData)) {
+          oddsData.push(...chunkData);
+        }
+      });
+    }
+
+    const oddsById = {};
+    if (Array.isArray(oddsData)) {
+      oddsData.forEach(o => oddsById[o.id] = o.kodds || {});
+    }
+
+    const matches = worldCupItems.map(item => {
+      const home = item.participants?.[0]?.name || "";
+      const away = item.participants?.[1]?.name || "";
+      const kickOffTime = Number(item.startTime) || null;
+      const kodds = oddsById[item.id] || {};
+
+      const getOdd = (subgameId) => kodds[subgameId]?.value ? Number(kodds[subgameId].value) : null;
+
+      const homeOdd = getOdd("1001001001");
+      const drawOdd = getOdd("1001001002");
+      const awayOdd = getOdd("1001001003");
+
+      const over25 = getOdd("1001003004");
+      const under25 = getOdd("1001003002");
+
+      const totalsByLine = emptyTotalsByLine();
+      if (over25 !== null || under25 !== null) {
+        setTotalsLine(totalsByLine, 2.5, { over: over25, under: under25 });
+      }
+
+      return {
+        bookmakerId: bookmaker.id,
+        bookmakerName: bookmaker.name,
+        source: bookmaker.type,
+        matchKey: createMatchKey(home, away, kickOffTime),
+        externalId: item.id,
+        matchCode: item.matchNumber,
+        home: normalizeTeamName(home),
+        away: normalizeTeamName(away),
+        leagueName: "World Cup 2026",
+        leagueGroup: String(item.competition?.id || ""),
+        kickOffTime,
+        updatedAt: Date.now(),
+        odds: {
+          home: homeOdd,
+          draw: drawOdd,
+          away: awayOdd,
+        },
+        totalsByLine,
+      };
+    });
+
+    return {
+      bookmaker,
+      status: "ok",
+      url: urlOffer,
+      matches,
+      fetchedAt: Date.now(),
+      totalMatches: matches.length,
+    };
+  } catch (err) {
+    throw err;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function fetchMozzartbetMatches(bookmaker) {
-  const page0 = await fetchMozzartbetPage(0);
-  let allItems = Array.isArray(page0?.items) ? page0.items : [];
-
-  const totalMatches = page0?.matchCount || 0;
-  if (totalMatches > 50 && allItems.length === 50) {
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      const page1 = await fetchMozzartbetPage(1);
-      if (Array.isArray(page1?.items)) {
-        allItems = [...allItems, ...page1.items];
-      }
-    } catch (error) {
-      console.warn("Mozzartbet page 1 fetch failed, proceeding with page 0 only:", error.message);
-    }
-  }
-
-  const matches = normalizeMozzartbetMatches(bookmaker, { items: allItems });
-  return {
-    bookmaker,
-    status: "ok",
-    url: "https://www.mozzartbet.com/betting/matches",
-    matches,
-    fetchedAt: Date.now(),
-    totalMatches: allItems.length,
-  };
-}
 
 async function getMozzartbetFeed(bookmaker) {
   const now = Date.now();
