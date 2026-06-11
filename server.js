@@ -1997,7 +1997,48 @@ function applyPinnacleShinNoVig(match) {
   };
 }
 
+function isOutright(home, away) {
+  const h = String(home || "").trim();
+  const a = String(away || "").trim();
+
+  // If either home or away is empty, it's an outright/special market, not a match.
+  if (!h || !a) return true;
+
+  const hLower = h.toLowerCase();
+  const aLower = a.toLowerCase();
+
+  // Filter out exact group names or generic group/outright lines
+  const groupPattern = /^(group|grupa)\s+[a-h]$/i;
+  if (groupPattern.test(h) || groupPattern.test(a)) return true;
+
+  const outrightKeywords = [
+    "pobednik grupe",
+    "winner of group",
+    "group winner",
+    "grupa pobednik",
+    "outright",
+    "pobednik prvenstva",
+    "pobednik turnira",
+    "tournament winner",
+    "overall winner",
+    "stage winner"
+  ];
+
+  if (outrightKeywords.some((keyword) => hLower.includes(keyword) || aLower.includes(keyword))) {
+    return true;
+  }
+
+  return false;
+}
+
 function aggregateMatches(results) {
+  // Filter out outrights/specials before aggregation
+  for (const result of results) {
+    if (result.matches) {
+      result.matches = result.matches.filter(m => !isOutright(m.home, m.away));
+    }
+  }
+
   const byMatch = new Map();
   const truthResult = results.find((result) => result.bookmaker.sourceOfTruth && result.status === "ok" && result.matches.length);
 
