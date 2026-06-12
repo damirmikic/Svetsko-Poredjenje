@@ -431,7 +431,9 @@ function renderBookmakerToggles() {
 function visibleMatches() {
   const query = state.search.trim().toLocaleLowerCase("sr-RS");
   const matches = state.data?.matches || [];
+  const now = Date.now();
   return matches.filter((match) => {
+    if (match.kickOffTime && Number(match.kickOffTime) < now) return false;
     if (state.view === "today" && !isTodayMatch(match)) return false;
 
     const haystack = `${match.home} ${match.away} ${match.leagueName}`.toLocaleLowerCase("sr-RS");
