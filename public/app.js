@@ -37,6 +37,7 @@ const state = {
   changedOddsUntil: new Map(),
   changedOddsDirection: new Map(),
   accumulatorX: 4,
+  accumulatorType: "favorite",
 };
 const oddsRefreshMs = 30_000;
 const oddsPulseMs = 10_000;
@@ -67,6 +68,7 @@ const els = {
   accumulatorFilterSection: document.querySelector("#accumulatorFilterSection"),
   accumulatorXInput: document.querySelector("#accumulatorXInput"),
   accumulatorXValue: document.querySelector("#accumulatorXValue"),
+  accumulatorTypeSelect: document.querySelector("#accumulatorTypeSelect"),
   accumulatorView: document.querySelector("#accumulatorView"),
   oddsTableWrap: document.querySelector("#oddsTableWrap"),
 };
@@ -1320,7 +1322,7 @@ function updateValueTicker(matches) {
   els.valueTickerWrap.style.display = "flex";
 }
 
-function calculateAccumulator(matches, X) {
+function calculateAccumulator(matches, X, type = "favorite") {
   const legs = [];
   let count = 0;
   
@@ -1329,39 +1331,70 @@ function calculateAccumulator(matches, X) {
   for (const match of sortedMatches) {
     if (count >= X) break;
     
-    const refOdds = match.bookmakers?.pinnacle_shin?.odds || match.bookmakers?.pinnacle?.odds;
-    let favOutcome = null;
-    let minOdd = Infinity;
+    let outcome = null;
+    let refOdd = null;
+    let teamName = "";
+    let customLabel = null;
     
-    if (refOdds && isValidOdd(refOdds.home) && isValidOdd(refOdds.draw) && isValidOdd(refOdds.away)) {
-      if (Number(refOdds.home) < minOdd) { minOdd = Number(refOdds.home); favOutcome = "home"; }
-      if (Number(refOdds.draw) < minOdd) { minOdd = Number(refOdds.draw); favOutcome = "draw"; }
-      if (Number(refOdds.away) < minOdd) { minOdd = Number(refOdds.away); favOutcome = "away"; }
-    } else {
-      let homeSum = 0, drawSum = 0, awaySum = 0;
-      let homeCount = 0, drawCount = 0, awayCount = 0;
-      for (const entry of Object.values(match.bookmakers || {})) {
-        if (entry.isReference) continue;
-        if (isValidOdd(entry.odds?.home)) { homeSum += Number(entry.odds.home); homeCount++; }
-        if (isValidOdd(entry.odds?.draw)) { drawSum += Number(entry.odds.draw); drawCount++; }
-        if (isValidOdd(entry.odds?.away)) { awaySum += Number(entry.odds.away); awayCount++; }
+    if (type === "over25") {
+      const overOdd = outcomeValue(match.bookmakers?.pinnacle_shin, "over25") || outcomeValue(match.bookmakers?.pinnacle, "over25");
+      let hasDomOdds = false;
+      const domesticBookieIds = ["merkurxtip", "maxbet", "mozzartbet", "balkanbet", "soccerbet", "superbet"];
+      for (const bookieId of domesticBookieIds) {
+        if (isValidOdd(outcomeValue(match.bookmakers?.[bookieId], "over25"))) {
+          hasDomOdds = true;
+          break;
+        }
       }
-      const avgHome = homeCount > 0 ? homeSum / homeCount : Infinity;
-      const avgDraw = drawCount > 0 ? drawSum / drawCount : Infinity;
-      const avgAway = awayCount > 0 ? awaySum / awayCount : Infinity;
       
-      if (avgHome < minOdd) { minOdd = avgHome; favOutcome = "home"; }
-      if (avgDraw < minOdd) { minOdd = avgDraw; favOutcome = "draw"; }
-      if (avgAway < minOdd) { minOdd = avgAway; favOutcome = "away"; }
+      if (hasDomOdds) {
+        outcome = "over25";
+        refOdd = isValidOdd(overOdd) ? Number(overOdd) : null;
+        teamName = "Ukupno golova";
+        customLabel = "3+";
+      }
+    } else {
+      const refOdds = match.bookmakers?.pinnacle_shin?.odds || match.bookmakers?.pinnacle?.odds;
+      let favOutcome = null;
+      let minOdd = Infinity;
+      
+      if (refOdds && isValidOdd(refOdds.home) && isValidOdd(refOdds.draw) && isValidOdd(refOdds.away)) {
+        if (Number(refOdds.home) < minOdd) { minOdd = Number(refOdds.home); favOutcome = "home"; }
+        if (Number(refOdds.draw) < minOdd) { minOdd = Number(refOdds.draw); favOutcome = "draw"; }
+        if (Number(refOdds.away) < minOdd) { minOdd = Number(refOdds.away); favOutcome = "away"; }
+      } else {
+        let homeSum = 0, drawSum = 0, awaySum = 0;
+        let homeCount = 0, drawCount = 0, awayCount = 0;
+        for (const entry of Object.values(match.bookmakers || {})) {
+          if (entry.isReference) continue;
+          if (isValidOdd(entry.odds?.home)) { homeSum += Number(entry.odds.home); homeCount++; }
+          if (isValidOdd(entry.odds?.draw)) { drawSum += Number(entry.odds.draw); drawCount++; }
+          if (isValidOdd(entry.odds?.away)) { awaySum += Number(entry.odds.away); awayCount++; }
+        }
+        const avgHome = homeCount > 0 ? homeSum / homeCount : Infinity;
+        const avgDraw = drawCount > 0 ? drawSum / drawCount : Infinity;
+        const avgAway = awayCount > 0 ? awaySum / awayCount : Infinity;
+        
+        if (avgHome < minOdd) { minOdd = avgHome; favOutcome = "home"; }
+        if (avgDraw < minOdd) { minOdd = avgDraw; favOutcome = "draw"; }
+        if (avgAway < minOdd) { minOdd = avgAway; favOutcome = "away"; }
+      }
+      
+      if (favOutcome && minOdd !== Infinity) {
+        outcome = favOutcome;
+        refOdd = minOdd;
+        teamName = favOutcome === "home" ? match.home : favOutcome === "away" ? match.away : "Nerešeno";
+      }
     }
     
-    if (!favOutcome || minOdd === Infinity) continue;
+    if (!outcome) continue;
     
     legs.push({
       match,
-      outcome: favOutcome,
-      team: favOutcome === "home" ? match.home : favOutcome === "away" ? match.away : "Nerešeno",
-      refOdd: minOdd
+      outcome,
+      team: teamName,
+      refOdd,
+      customLabel
     });
     count++;
   }
@@ -1419,7 +1452,7 @@ function calculateAccumulator(matches, X) {
 
 function renderAccumulatorView(matches) {
   const X = state.accumulatorX || 4;
-  const result = calculateAccumulator(matches, X);
+  const result = calculateAccumulator(matches, X, state.accumulatorType || "favorite");
   
   if (!result.legs.length) {
     els.accumulatorView.innerHTML = `
@@ -1459,11 +1492,13 @@ function renderAccumulatorView(matches) {
         edgeHtml = `<span class="card-edge neutral">Nema reference</span>`;
       }
       
+      const typeTitle = state.accumulatorType === "over25" ? "Akumulator Golova 3+" : "Akumulator Favorita";
       const legTexts = result.legs.map((leg, i) => {
         const oddVal = bookie.legOdds[i] ? bookie.legOdds[i].toFixed(2) : '-';
-        return `${i+1}. ${leg.match.home} - ${leg.match.away} (${leg.team}): ${oddVal}`;
+        const label = state.accumulatorType === "over25" ? "Golovi 3+" : `${leg.team} (${marketLabels[leg.outcome]})`;
+        return `${i+1}. ${leg.match.home} - ${leg.match.away} (${label}): ${oddVal}`;
       });
-      ticketDataStr = escapeHtml(`${bookie.name} Akumulator Favorita (x${X}):\n` + legTexts.join('\n') + `\nUkupna kvota: ${bookie.totalOdd.toFixed(2)}`);
+      ticketDataStr = escapeHtml(`${bookie.name} ${typeTitle} (x${X}):\n` + legTexts.join('\n') + `\nUkupna kvota: ${bookie.totalOdd.toFixed(2)}`);
     } else {
       edgeHtml = `<span class="card-edge neutral">Nepotpuno</span>`;
     }
@@ -1545,7 +1580,7 @@ function renderAccumulatorView(matches) {
         </td>
         <td class="leg-fav">
           <strong>${leg.team}</strong>
-          <span>${marketLabels[leg.outcome]}</span>
+          <span>${leg.customLabel || marketLabels[leg.outcome]}</span>
         </td>
         <td class="ref-odd-cell">${formatOdd(refOddValue)}</td>
         ${oddCells}
@@ -1652,6 +1687,11 @@ els.accumulatorXInput.addEventListener("input", (event) => {
   document.querySelectorAll(".accumulator-presets .preset-btn").forEach(btn => {
     btn.classList.toggle("active", Number(btn.dataset.val) === state.accumulatorX);
   });
+  render();
+});
+
+els.accumulatorTypeSelect.addEventListener("change", (event) => {
+  state.accumulatorType = event.target.value;
   render();
 });
 

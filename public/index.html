@@ -34,18 +34,24 @@
 
       <main class="workspace">
         <aside class="filter-rail" aria-label="Filteri">
-          <section>
-            <h2>Takmicenje</h2>
-            <label class="select-label">
-              <span>Turnir</span>
-              <select id="competitionSelect">
-                <option>World Cup 2026</option>
-              </select>
+          <section id="accumulatorFilterSection" style="display: none;">
+            <h2>Množenje kvota</h2>
+            <label class="range-control">
+              <span>Broj mečeva (X): <strong id="accumulatorXValue">4</strong></span>
+              <input id="accumulatorXInput" min="2" max="15" step="1" type="range" value="4" />
             </label>
-            <label class="select-label">
-              <span>Sport</span>
-              <select>
-                <option>Fudbal</option>
+            <div class="accumulator-presets">
+              <button type="button" class="preset-btn" data-val="3">3 meča</button>
+              <button type="button" class="preset-btn active" data-val="4">4 meča</button>
+              <button type="button" class="preset-btn" data-val="5">5 mečeva</button>
+              <button type="button" class="preset-btn" data-val="8">8 mečeva</button>
+              <button type="button" class="preset-btn" data-val="10">10 mečeva</button>
+            </div>
+            <label class="select-label" style="margin-top: 14px;">
+              <span>Tip opklade</span>
+              <select id="accumulatorTypeSelect">
+                <option value="favorite">Favorit (Konačan ishod)</option>
+                <option value="over25">Ukupno golova više 2.5 (3+)</option>
               </select>
             </label>
           </section>
@@ -83,21 +89,6 @@
               </span>
               <input id="oddsThresholdInput" min="0.5" max="10" step="0.5" type="range" value="3" />
             </label>
-          </section>
-
-          <section id="accumulatorFilterSection" style="display: none;">
-            <h2>Množenje kvota</h2>
-            <label class="range-control">
-              <span>Broj mečeva (X): <strong id="accumulatorXValue">4</strong></span>
-              <input id="accumulatorXInput" min="2" max="15" step="1" type="range" value="4" />
-            </label>
-            <div class="accumulator-presets">
-              <button type="button" class="preset-btn" data-val="3">3 meča</button>
-              <button type="button" class="preset-btn active" data-val="4">4 meča</button>
-              <button type="button" class="preset-btn" data-val="5">5 mečeva</button>
-              <button type="button" class="preset-btn" data-val="8">8 mečeva</button>
-              <button type="button" class="preset-btn" data-val="10">10 mečeva</button>
-            </div>
           </section>
         </aside>
 
