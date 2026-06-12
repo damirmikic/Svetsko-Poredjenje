@@ -22,6 +22,7 @@
             <button class="active" type="button" data-view="all">1X2</button>
             <button type="button" data-view="today">Danasnji mecevi</button>
             <button type="button" data-view="goals">Golovi</button>
+            <button type="button" data-view="accumulator">Množenje kvota</button>
           </div>
           <button class="refresh-button" id="refreshButton" type="button">
             <span class="refresh-icon" aria-hidden="true"></span>
@@ -83,6 +84,21 @@
               <input id="oddsThresholdInput" min="0.5" max="10" step="0.5" type="range" value="3" />
             </label>
           </section>
+
+          <section id="accumulatorFilterSection" style="display: none;">
+            <h2>Množenje kvota</h2>
+            <label class="range-control">
+              <span>Broj mečeva (X): <strong id="accumulatorXValue">4</strong></span>
+              <input id="accumulatorXInput" min="2" max="15" step="1" type="range" value="4" />
+            </label>
+            <div class="accumulator-presets">
+              <button type="button" class="preset-btn" data-val="3">3 meča</button>
+              <button type="button" class="preset-btn active" data-val="4">4 meča</button>
+              <button type="button" class="preset-btn" data-val="5">5 mečeva</button>
+              <button type="button" class="preset-btn" data-val="8">8 mečeva</button>
+              <button type="button" class="preset-btn" data-val="10">10 mečeva</button>
+            </div>
+          </section>
         </aside>
 
         <section class="main-panel">
@@ -126,12 +142,14 @@
             </div>
           </div>
 
-          <div class="odds-table-wrap">
+          <div class="odds-table-wrap" id="oddsTableWrap">
             <table class="odds-table">
               <thead id="oddsHead"></thead>
               <tbody id="oddsBody"></tbody>
             </table>
           </div>
+
+          <div class="accumulator-view" id="accumulatorView" style="display: none;"></div>
         </section>
 
       </main>

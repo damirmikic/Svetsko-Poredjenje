@@ -303,6 +303,9 @@ select,
 
 .main-panel {
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 114px);
 }
 
 .summary-strip {
@@ -401,7 +404,8 @@ select,
 
 .odds-table-wrap {
   overflow: auto;
-  max-height: calc(100vh - 220px);
+  flex: 1;
+  min-height: 0;
 }
 
 .odds-table {
@@ -693,6 +697,18 @@ select,
 
   .odds-table-wrap {
     max-height: none;
+    overflow: visible;
+  }
+
+  .main-panel {
+    height: auto;
+    display: block;
+    overflow: visible;
+  }
+
+  .accumulator-view {
+    max-height: none;
+    overflow-y: visible;
   }
 }
 
@@ -1027,4 +1043,384 @@ select,
   background: rgba(14, 161, 83, 0.1);
   padding: 2px 4px;
   border-radius: 3px;
+}
+
+/* Accumulator Presets in Sidebar */
+.accumulator-presets {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.preset-btn {
+  flex: 1;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 6px;
+  padding: 6px 0;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  color: var(--muted);
+  transition: all 0.2s ease;
+}
+
+.preset-btn:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.preset-btn.active {
+  background: #12231b;
+  color: white;
+  border-color: #12231b;
+}
+
+/* Accumulator Layout View */
+.accumulator-view {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+/* Leaderboard Grid */
+.accumulator-leaderboard {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+
+/* Leaderboard Cards styling */
+.leaderboard-card {
+  position: relative;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02);
+}
+
+.leaderboard-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 20px rgba(20, 31, 25, 0.05);
+}
+
+/* Top Rank highlighting */
+.leaderboard-card.rank-1 {
+  background: linear-gradient(145deg, #ffffff, #eef9f2);
+  border: 2px solid var(--green);
+  box-shadow: 0 8px 24px rgba(12, 122, 67, 0.08);
+}
+
+.leaderboard-card.incomplete {
+  opacity: 0.65;
+  background: var(--bg);
+}
+
+/* Header inside card */
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.card-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  font-size: 12px;
+  font-weight: 800;
+  background: var(--soft);
+  color: var(--muted);
+}
+
+.rank-1 .rank-badge {
+  background: #f1c40f;
+  color: #7f6000;
+  box-shadow: 0 2px 8px rgba(241, 196, 15, 0.4);
+}
+
+.rank-2 .rank-badge {
+  background: #bdc3c7;
+  color: #2c3e50;
+  box-shadow: 0 2px 8px rgba(189, 195, 199, 0.4);
+}
+
+.rank-3 .rank-badge {
+  background: #e67e22;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(230, 126, 34, 0.4);
+}
+
+/* Combined Odd */
+.card-odd-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.card-odd-value {
+  font-size: 28px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.5px;
+}
+
+.rank-1 .card-odd-value {
+  color: var(--green);
+}
+
+.card-odd-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+/* Edge badge vs Pinnacle Reference */
+.card-edge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 4px 8px;
+  border-radius: 6px;
+  width: fit-content;
+}
+
+.card-edge.positive {
+  background: var(--green-2);
+  color: var(--green);
+}
+
+.card-edge.negative {
+  background: #fef3f2;
+  color: var(--red);
+}
+
+.card-edge.neutral {
+  background: var(--soft);
+  color: var(--muted);
+}
+
+/* Value Progress Bar */
+.card-progress-container {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.card-progress-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  font-weight: 800;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+}
+
+.card-progress-bar-bg {
+  height: 6px;
+  background: var(--soft);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.card-progress-bar-fg {
+  height: 100%;
+  background: var(--muted);
+  border-radius: 3px;
+  transition: width 0.4s ease-out;
+}
+
+.rank-1 .card-progress-bar-fg {
+  background: var(--green);
+}
+
+/* Copy ticket button inside card */
+.card-copy-btn {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-top: auto;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.card-copy-btn:hover {
+  background: var(--surface-2);
+  border-color: var(--muted);
+}
+
+.card-copy-btn.is-copied {
+  background: var(--green-2);
+  color: var(--green);
+  border-color: var(--green);
+}
+
+/* Leg Table styling */
+.accumulator-legs {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+  margin-top: 10px;
+  flex-shrink: 0;
+}
+
+.legs-title {
+  padding: 16px;
+  font-size: 15px;
+  font-weight: 800;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  margin: 0;
+}
+
+.legs-table-wrap {
+  overflow-x: auto;
+}
+
+.legs-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.legs-table th {
+  height: 38px;
+  background: #17231d;
+  color: #eff8ef;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+  padding: 0 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  white-space: nowrap;
+}
+
+.legs-table th.leg-num-head {
+  width: 50px;
+}
+
+.legs-table th.leg-match-head {
+  text-align: left;
+  padding-left: 14px;
+}
+
+.legs-table th.leg-fav-head {
+  text-align: left;
+  padding-left: 10px;
+}
+
+.legs-table td {
+  height: 52px;
+  border-bottom: 1px solid var(--line);
+  border-right: 1px solid var(--soft);
+  font-size: 13px;
+  text-align: center;
+  padding: 0 10px;
+  background: var(--surface);
+}
+
+.legs-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.legs-table td.leg-num {
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.legs-table td.leg-match {
+  text-align: left;
+  padding-left: 14px;
+  font-weight: 700;
+}
+
+.legs-table td.leg-match small {
+  display: block;
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.legs-table td.leg-fav {
+  text-align: left;
+  padding-left: 10px;
+}
+
+.legs-table td.leg-fav strong {
+  color: var(--green);
+}
+
+.legs-table td.leg-fav span {
+  font-size: 11px;
+  background: var(--green-2);
+  color: var(--green);
+  padding: 1px 4px;
+  border-radius: 4px;
+  margin-left: 4px;
+  font-weight: 800;
+}
+
+.legs-table td.ref-odd-cell {
+  background: var(--surface-2);
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.legs-table td.leg-odd-cell {
+  font-weight: 800;
+}
+
+.legs-table td.leg-odd-cell.best {
+  background: var(--green-2);
+  color: var(--green);
+  box-shadow: inset 0 0 0 1px rgba(12, 122, 67, 0.15);
+}
+
+.legs-table td.leg-odd-cell.lowest {
+  background: var(--purple-2);
+  color: var(--purple);
+  box-shadow: inset 0 0 0 1px rgba(124, 58, 237, 0.15);
+}
+
+.legs-table td.leg-odd-cell.missing {
+  background: #fafbf9;
+  color: #a5aea4;
 }
