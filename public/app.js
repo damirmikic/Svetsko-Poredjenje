@@ -36,6 +36,8 @@ const state = {
   oddsSnapshot: new Map(),
   changedOddsUntil: new Map(),
   changedOddsDirection: new Map(),
+  accumulatorX: 4,
+  accumulatorType: "favorite",
 };
 const oddsRefreshMs = 30_000;
 const oddsPulseMs = 10_000;
@@ -63,6 +65,12 @@ const els = {
   oddsTable: document.querySelector(".odds-table"),
   valueTickerWrap: document.querySelector("#valueTickerWrap"),
   valueTicker: document.querySelector("#valueTicker"),
+  accumulatorFilterSection: document.querySelector("#accumulatorFilterSection"),
+  accumulatorXInput: document.querySelector("#accumulatorXInput"),
+  accumulatorXValue: document.querySelector("#accumulatorXValue"),
+  accumulatorTypeSelect: document.querySelector("#accumulatorTypeSelect"),
+  accumulatorView: document.querySelector("#accumulatorView"),
+  oddsTableWrap: document.querySelector("#oddsTableWrap"),
 };
 
 function formatOdd(value) {
@@ -423,7 +431,9 @@ function renderBookmakerToggles() {
 function visibleMatches() {
   const query = state.search.trim().toLocaleLowerCase("sr-RS");
   const matches = state.data?.matches || [];
+  const now = Date.now();
   return matches.filter((match) => {
+    if (match.kickOffTime && Number(match.kickOffTime) < now) return false;
     if (state.view === "today" && !isTodayMatch(match)) return false;
 
     const haystack = `${match.home} ${match.away} ${match.leagueName}`.toLocaleLowerCase("sr-RS");
@@ -440,9 +450,20 @@ function renderView() {
     all: "World Cup 2026 - 1X2 kvote",
     today: "Danasnji mecevi - 1X2 i golovi 2.5",
     goals: "World Cup 2026 - Golovi 2.5",
+    accumulator: "Množenje kvota na favorite za naredne mečeve",
   };
   els.tableTitle.textContent = titles[state.view] || titles.all;
   els.oddsTable.classList.toggle("is-today", state.view === "today");
+
+  const isAcc = state.view === "accumulator";
+  els.oddsTableWrap.style.display = isAcc ? "none" : "block";
+  els.accumulatorView.style.display = isAcc ? "flex" : "none";
+  els.accumulatorFilterSection.style.display = isAcc ? "block" : "none";
+
+  const noVigLimitSec = els.noVigLimitInput?.closest("section");
+  const thresholdSec = els.oddsThresholdInput?.closest("section");
+  if (noVigLimitSec) noVigLimitSec.style.display = isAcc ? "none" : "block";
+  if (thresholdSec) thresholdSec.style.display = isAcc ? "none" : "block";
 }
 
 function activeOutcomes() {
@@ -1303,18 +1324,344 @@ function updateValueTicker(matches) {
   els.valueTickerWrap.style.display = "flex";
 }
 
+function calculateAccumulator(matches, X, type = "favorite") {
+  const legs = [];
+  let count = 0;
+  
+  const sortedMatches = [...matches].sort((a, b) => Number(a.kickOffTime || 0) - Number(b.kickOffTime || 0));
+  
+  for (const match of sortedMatches) {
+    if (count >= X) break;
+    
+    let outcome = null;
+    let refOdd = null;
+    let teamName = "";
+    let customLabel = null;
+    
+    if (type === "over25") {
+      const overOdd = outcomeValue(match.bookmakers?.pinnacle_shin, "over25") || outcomeValue(match.bookmakers?.pinnacle, "over25");
+      let hasDomOdds = false;
+      const domesticBookieIds = ["merkurxtip", "maxbet", "mozzartbet", "balkanbet", "soccerbet", "superbet"];
+      for (const bookieId of domesticBookieIds) {
+        if (isValidOdd(outcomeValue(match.bookmakers?.[bookieId], "over25"))) {
+          hasDomOdds = true;
+          break;
+        }
+      }
+      
+      if (hasDomOdds) {
+        outcome = "over25";
+        refOdd = isValidOdd(overOdd) ? Number(overOdd) : null;
+        teamName = "Ukupno golova";
+        customLabel = "3+";
+      }
+    } else {
+      const refOdds = match.bookmakers?.pinnacle_shin?.odds || match.bookmakers?.pinnacle?.odds;
+      let favOutcome = null;
+      let minOdd = Infinity;
+      
+      if (refOdds && isValidOdd(refOdds.home) && isValidOdd(refOdds.draw) && isValidOdd(refOdds.away)) {
+        if (Number(refOdds.home) < minOdd) { minOdd = Number(refOdds.home); favOutcome = "home"; }
+        if (Number(refOdds.draw) < minOdd) { minOdd = Number(refOdds.draw); favOutcome = "draw"; }
+        if (Number(refOdds.away) < minOdd) { minOdd = Number(refOdds.away); favOutcome = "away"; }
+      } else {
+        let homeSum = 0, drawSum = 0, awaySum = 0;
+        let homeCount = 0, drawCount = 0, awayCount = 0;
+        for (const entry of Object.values(match.bookmakers || {})) {
+          if (entry.isReference) continue;
+          if (isValidOdd(entry.odds?.home)) { homeSum += Number(entry.odds.home); homeCount++; }
+          if (isValidOdd(entry.odds?.draw)) { drawSum += Number(entry.odds.draw); drawCount++; }
+          if (isValidOdd(entry.odds?.away)) { awaySum += Number(entry.odds.away); awayCount++; }
+        }
+        const avgHome = homeCount > 0 ? homeSum / homeCount : Infinity;
+        const avgDraw = drawCount > 0 ? drawSum / drawCount : Infinity;
+        const avgAway = awayCount > 0 ? awaySum / awayCount : Infinity;
+        
+        if (avgHome < minOdd) { minOdd = avgHome; favOutcome = "home"; }
+        if (avgDraw < minOdd) { minOdd = avgDraw; favOutcome = "draw"; }
+        if (avgAway < minOdd) { minOdd = avgAway; favOutcome = "away"; }
+      }
+      
+      if (favOutcome && minOdd !== Infinity) {
+        outcome = favOutcome;
+        refOdd = minOdd;
+        teamName = favOutcome === "home" ? match.home : favOutcome === "away" ? match.away : "Nerešeno";
+      }
+    }
+    
+    if (!outcome) continue;
+    
+    legs.push({
+      match,
+      outcome,
+      team: teamName,
+      refOdd,
+      customLabel
+    });
+    count++;
+  }
+  
+  const domesticBookies = [
+    { id: "merkurxtip", name: "MerkurXtip" },
+    { id: "maxbet", name: "MaxBet" },
+    { id: "mozzartbet", name: "Mozzart" },
+    { id: "balkanbet", name: "BalkanBet" },
+    { id: "soccerbet", name: "SoccerBet" },
+    { id: "superbet", name: "Superbet" }
+  ];
+  
+  const rankedBookmakers = domesticBookies.map(bookie => {
+    let totalOdd = 1;
+    let complete = true;
+    const legOdds = [];
+    
+    for (const leg of legs) {
+      const odd = outcomeValue(leg.match.bookmakers?.[bookie.id], leg.outcome);
+      if (isValidOdd(odd)) {
+        totalOdd *= Number(odd);
+        legOdds.push(Number(odd));
+      } else {
+        complete = false;
+        legOdds.push(null);
+      }
+    }
+    
+    return {
+      ...bookie,
+      totalOdd: complete ? totalOdd : null,
+      legOdds,
+      complete
+    };
+  });
+  
+  let refTotalOdd = 1;
+  let refComplete = true;
+  for (const leg of legs) {
+    const odd = outcomeValue(leg.match.bookmakers?.pinnacle_shin, leg.outcome);
+    if (isValidOdd(odd)) {
+      refTotalOdd *= Number(odd);
+    } else {
+      refComplete = false;
+    }
+  }
+  
+  return {
+    legs,
+    rankedBookmakers,
+    referenceParlay: refComplete ? refTotalOdd : null
+  };
+}
+
+function renderAccumulatorView(matches) {
+  const X = state.accumulatorX || 4;
+  const result = calculateAccumulator(matches, X, state.accumulatorType || "favorite");
+  
+  if (!result.legs.length) {
+    els.accumulatorView.innerHTML = `
+      <div class="empty-state">
+        <strong>Nema raspoloživih mečeva</strong>
+        <span>Osvežite podatke ili proverite filtere bookmakera.</span>
+      </div>
+    `;
+    return;
+  }
+  
+  const ranked = [...result.rankedBookmakers].sort((a, b) => {
+    if (!a.complete && b.complete) return 1;
+    if (a.complete && !b.complete) return -1;
+    if (!a.complete && !b.complete) return 0;
+    return b.totalOdd - a.totalOdd;
+  });
+  
+  const bestOdd = ranked[0]?.complete ? ranked[0].totalOdd : null;
+  const refOdd = result.referenceParlay;
+  
+  const cardsHtml = ranked.map((bookie, index) => {
+    const rank = index + 1;
+    const rankClass = bookie.complete ? `rank-${rank}` : 'incomplete';
+    const relPercent = (bookie.complete && bestOdd > 0) ? (bookie.totalOdd / bestOdd) * 100 : 0;
+    
+    let edgeHtml = '';
+    let ticketDataStr = '';
+    
+    if (bookie.complete) {
+      if (refOdd && refOdd > 0) {
+        const edgePercent = ((bookie.totalOdd / refOdd) - 1) * 100;
+        const sign = edgePercent > 0 ? '+' : '';
+        const edgeClass = edgePercent > 0 ? 'positive' : (edgePercent < 0 ? 'negative' : 'neutral');
+        edgeHtml = `<span class="card-edge ${edgeClass}">${sign}${edgePercent.toFixed(1)}% vs Pinnacle</span>`;
+      } else {
+        edgeHtml = `<span class="card-edge neutral">Nema reference</span>`;
+      }
+      
+      const typeTitle = state.accumulatorType === "over25" ? "Akumulator Golova 3+" : "Akumulator Favorita";
+      const legTexts = result.legs.map((leg, i) => {
+        const oddVal = bookie.legOdds[i] ? bookie.legOdds[i].toFixed(2) : '-';
+        const label = state.accumulatorType === "over25" ? "Golovi 3+" : `${leg.team} (${marketLabels[leg.outcome]})`;
+        return `${i+1}. ${leg.match.home} - ${leg.match.away} (${label}): ${oddVal}`;
+      });
+      ticketDataStr = escapeHtml(`${bookie.name} ${typeTitle} (x${X}):\n` + legTexts.join('\n') + `\nUkupna kvota: ${bookie.totalOdd.toFixed(2)}`);
+    } else {
+      edgeHtml = `<span class="card-edge neutral">Nepotpuno</span>`;
+    }
+    
+    const oddDisplay = bookie.complete ? bookie.totalOdd.toFixed(2) : 'Nepotpuno';
+    
+    return `
+      <div class="leaderboard-card ${rankClass}">
+        <div class="card-header">
+          <span class="card-title">${bookie.name}</span>
+          <span class="rank-badge">${bookie.complete ? rank : '–'}</span>
+        </div>
+        <div class="card-odd-row">
+          <strong class="card-odd-value">${oddDisplay}</strong>
+          ${bookie.complete ? `<span class="card-odd-label">kvota</span>` : ''}
+        </div>
+        ${edgeHtml}
+        ${bookie.complete ? `
+          <div class="card-progress-container">
+            <div class="card-progress-label">
+              <span>Relativna vrednost</span>
+              <span>${relPercent.toFixed(0)}%</span>
+            </div>
+            <div class="card-progress-bar-bg">
+              <div class="card-progress-bar-fg" style="width: ${relPercent}%"></div>
+            </div>
+          </div>
+          <button type="button" class="card-copy-btn" data-ticket="${ticketDataStr}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            Kopiraj tiket
+          </button>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+
+  const domesticBookmakers = [
+    { id: "merkurxtip", name: "MerkurXtip" },
+    { id: "maxbet", name: "MaxBet" },
+    { id: "mozzartbet", name: "Mozzart" },
+    { id: "balkanbet", name: "BalkanBet" },
+    { id: "soccerbet", name: "SoccerBet" },
+    { id: "superbet", name: "Superbet" }
+  ];
+  
+  const legsRowsHtml = result.legs.map((leg, index) => {
+    let bestDomOdd = 0;
+    let lowestDomOdd = Infinity;
+    domesticBookmakers.forEach(bookie => {
+      const odd = outcomeValue(leg.match.bookmakers?.[bookie.id], leg.outcome);
+      if (isValidOdd(odd)) {
+        if (Number(odd) > bestDomOdd) bestDomOdd = Number(odd);
+        if (Number(odd) < lowestDomOdd) lowestDomOdd = Number(odd);
+      }
+    });
+
+    const oddCells = domesticBookmakers.map(bookie => {
+      const odd = outcomeValue(leg.match.bookmakers?.[bookie.id], leg.outcome);
+      const isBest = isValidOdd(odd) && Number(odd) === bestDomOdd;
+      const isLowest = isValidOdd(odd) && Number(odd) === lowestDomOdd && bestDomOdd !== lowestDomOdd;
+      const cellClass = odd 
+        ? (isBest ? 'leg-odd-cell best' : (isLowest ? 'leg-odd-cell lowest' : 'leg-odd-cell'))
+        : 'leg-odd-cell missing';
+        
+      return `<td class="${cellClass}">${formatOdd(odd)}</td>`;
+    }).join('');
+
+    const refOddValue = outcomeValue(leg.match.bookmakers?.pinnacle_shin, leg.outcome);
+
+    return `
+      <tr>
+        <td class="leg-num">${index + 1}</td>
+        <td class="leg-match">
+          ${leg.match.home} vs ${leg.match.away}
+          <small>${formatTime(leg.match.kickOffTime)}</small>
+        </td>
+        <td class="leg-fav">
+          <strong>${leg.team}</strong>
+          <span>${leg.customLabel || marketLabels[leg.outcome]}</span>
+        </td>
+        <td class="ref-odd-cell">${formatOdd(refOddValue)}</td>
+        ${oddCells}
+      </tr>
+    `;
+  }).join('');
+
+  els.accumulatorView.innerHTML = `
+    <div class="accumulator-leaderboard">
+      ${cardsHtml}
+    </div>
+    
+    <div class="accumulator-legs">
+      <h3 class="legs-title">Pregled parlay legova (narednih ${result.legs.length} mečeva)</h3>
+      <div class="legs-table-wrap">
+        <table class="legs-table">
+          <thead>
+            <tr>
+              <th class="leg-num-head">Leg</th>
+              <th class="leg-match-head">Meč</th>
+              <th class="leg-fav-head">Favorit</th>
+              <th>Pinnacle reference</th>
+              <th>MerkurXtip</th>
+              <th>MaxBet</th>
+              <th>Mozzart</th>
+              <th>BalkanBet</th>
+              <th>SoccerBet</th>
+              <th>Superbet</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${legsRowsHtml}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+  
+  els.accumulatorView.querySelectorAll(".card-copy-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      const text = btn.dataset.ticket;
+      try {
+        await copyTextToClipboard(text);
+        const originalText = btn.innerHTML;
+        btn.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          Kopirano!
+        `;
+        btn.classList.add("is-copied");
+        setTimeout(() => {
+          btn.innerHTML = originalText;
+          btn.classList.remove("is-copied");
+        }, 1500);
+      } catch (err) {
+        console.error("Clipboard copy failed:", err);
+      }
+    });
+  });
+}
+
 function render() {
   renderBookmakerToggles();
   const matches = visibleMatches();
   renderView();
-  renderNoVigLimit();
-  renderOddsThreshold();
-  renderHead();
-  renderRows(matches);
+  
+  if (state.view === "accumulator") {
+    renderAccumulatorView(matches);
+  } else {
+    renderNoVigLimit();
+    renderOddsThreshold();
+    renderHead();
+    renderRows(matches);
+  }
+  
   renderSummary(matches);
   updateValueTicker(matches);
 }
-
 
 els.refreshButton.addEventListener("click", loadOdds);
 els.searchInput.addEventListener("input", (event) => {
@@ -1332,6 +1679,32 @@ els.oddsThresholdInput.addEventListener("input", (event) => {
 els.viewButtons.forEach((button) => {
   button.addEventListener("click", () => {
     state.view = button.dataset.view || "all";
+    render();
+  });
+});
+
+els.accumulatorXInput.addEventListener("input", (event) => {
+  state.accumulatorX = Number(event.target.value) || 4;
+  els.accumulatorXValue.textContent = String(state.accumulatorX);
+  document.querySelectorAll(".accumulator-presets .preset-btn").forEach(btn => {
+    btn.classList.toggle("active", Number(btn.dataset.val) === state.accumulatorX);
+  });
+  render();
+});
+
+els.accumulatorTypeSelect.addEventListener("change", (event) => {
+  state.accumulatorType = event.target.value;
+  render();
+});
+
+document.querySelectorAll(".accumulator-presets .preset-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    state.accumulatorX = Number(btn.dataset.val);
+    els.accumulatorXInput.value = String(state.accumulatorX);
+    els.accumulatorXValue.textContent = String(state.accumulatorX);
+    document.querySelectorAll(".accumulator-presets .preset-btn").forEach(b => {
+      b.classList.toggle("active", b === btn);
+    });
     render();
   });
 });

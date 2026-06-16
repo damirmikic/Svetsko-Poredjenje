@@ -2106,7 +2106,12 @@ function aggregateMatches(results) {
     }
   }
 
+  const cutOffTime = Date.now();
   return Array.from(byMatch.values())
+    .filter((match) => {
+      if (!match.kickOffTime) return true;
+      return Number(match.kickOffTime) >= cutOffTime;
+    })
     .map((match) => {
       applySelectedGoalsLine(match);
       applyPinnacleShinNoVig(match);
