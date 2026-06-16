@@ -80,7 +80,7 @@ const BOOKMAKERS = [
     id: "merkurxtip",
     name: "MerkurXtip",
     type: "dualsoft",
-    baseUrl: "https://dual-dev.merkurtip.rs",
+    baseUrl: "https://www.merkurxtip.rs",
   },
   {
     id: "maxbet",
