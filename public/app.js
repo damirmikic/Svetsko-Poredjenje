@@ -18,6 +18,8 @@ const pinnacleBrowserLeagueCode = "fifa-world-cup";
 const matchWinnerOutcomes = ["home", "draw", "away"];
 const totalGoalsOutcomes = ["over25", "under25"];
 const todayOutcomes = [...matchWinnerOutcomes, "over25", "under25"];
+const outrightAlertLeadMs = 5 * 60 * 1000;
+const outrightAlertStoragePrefix = "outright-alert-confirmed:";
 const marketLabels = {
   home: "1",
   draw: "X",
@@ -36,6 +38,7 @@ const state = {
   oddsSnapshot: new Map(),
   changedOddsUntil: new Map(),
   changedOddsDirection: new Map(),
+  outrightAlertMatchKey: null,
   accumulatorX: 4,
   accumulatorType: "favorite",
 };
@@ -363,6 +366,72 @@ function isTodayMatch(match) {
   return kickOffTime >= start && kickOffTime < end;
 }
 
+function getFirstTodayMatch() {
+  return (state.data?.matches || [])
+    .filter(isTodayMatch)
+    .filter((match) => Number.isFinite(Number(match.kickOffTime)))
+    .sort((a, b) => Number(a.kickOffTime) - Number(b.kickOffTime))[0] || null;
+}
+
+function outrightAlertStorageKey(match) {
+  const matchKey = match?.matchKey || createMatchKey(match?.home, match?.away, match?.kickOffTime);
+  return `${outrightAlertStoragePrefix}${matchKey}:${Number(match?.kickOffTime) || "unknown"}`;
+}
+
+function isOutrightAlertConfirmed(match) {
+  if (!match) return true;
+  return window.localStorage.getItem(outrightAlertStorageKey(match)) === "1";
+}
+
+function confirmOutrightAlert(match) {
+  if (!match) return;
+  window.localStorage.setItem(outrightAlertStorageKey(match), "1");
+}
+
+function showOutrightAlert(match) {
+  if (!match || state.outrightAlertMatchKey === outrightAlertStorageKey(match)) return;
+
+  let backdrop = document.querySelector(".outright-alert-backdrop");
+  if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.className = "outright-alert-backdrop";
+    backdrop.innerHTML = `
+      <div class="outright-alert-modal" role="dialog" aria-modal="true" aria-labelledby="outrightAlertTitle">
+        <div class="outright-alert-kicker">Upozorenje</div>
+        <h2 id="outrightAlertTitle">Zatvori Outrights</h2>
+        <p class="outright-alert-text"></p>
+        <button class="outright-alert-confirm" type="button">Potvrdjujem</button>
+      </div>
+    `;
+    document.body.appendChild(backdrop);
+  }
+
+  const matchup = `${match.home} vs ${match.away}`;
+  backdrop.querySelector(".outright-alert-text").textContent =
+    `Prva utakmica danas pocinje u ${formatTime(match.kickOffTime)}: ${matchup}.`;
+
+  const confirmButton = backdrop.querySelector(".outright-alert-confirm");
+  confirmButton.onclick = () => {
+    confirmOutrightAlert(match);
+    state.outrightAlertMatchKey = null;
+    backdrop.classList.remove("show");
+  };
+
+  state.outrightAlertMatchKey = outrightAlertStorageKey(match);
+  backdrop.classList.add("show");
+  confirmButton.focus();
+}
+
+function checkOutrightAlert() {
+  const match = getFirstTodayMatch();
+  if (!match || isOutrightAlertConfirmed(match)) return;
+
+  const kickOffTime = Number(match.kickOffTime);
+  if (Date.now() >= kickOffTime - outrightAlertLeadMs) {
+    showOutrightAlert(match);
+  }
+}
+
 async function loadOdds() {
   if (isLoadingOdds) return;
   isLoadingOdds = true;
@@ -381,6 +450,7 @@ async function loadOdds() {
     }
     trackChangedOdds(previousSnapshot, collectOddsSnapshot(state.data));
     render();
+    checkOutrightAlert();
   } catch (error) {
     els.resultNote.textContent = `Greska pri ucitavanju: ${error.message}`;
   } finally {
@@ -1712,3 +1782,4 @@ document.querySelectorAll(".accumulator-presets .preset-btn").forEach((btn) => {
 loadOdds();
 setInterval(refreshOddsOnTimer, oddsRefreshMs);
 setInterval(renderRefreshCountdown, 1000);
+setInterval(checkOutrightAlert, 1000);

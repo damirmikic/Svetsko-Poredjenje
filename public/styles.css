@@ -901,6 +901,95 @@ select,
   border: 1px solid rgba(180, 35, 24, 0.4);
 }
 
+.outright-alert-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: rgba(17, 24, 39, 0.72);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.outright-alert-backdrop.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.outright-alert-modal {
+  width: min(760px, 96vw);
+  border: 2px solid rgba(245, 158, 11, 0.75);
+  border-radius: 8px;
+  background: #fff8e5;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.38);
+  padding: 38px;
+  color: #1f2937;
+  text-align: center;
+  transform: translateY(10px) scale(0.98);
+  transition: transform 0.2s ease;
+}
+
+.outright-alert-backdrop.show .outright-alert-modal {
+  transform: translateY(0) scale(1);
+}
+
+.outright-alert-kicker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: #b42318;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.outright-alert-modal h2 {
+  margin: 18px 0 12px;
+  color: #7f1d1d;
+  font-size: 46px;
+  line-height: 1.04;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.outright-alert-text {
+  margin: 0 auto 28px;
+  max-width: 620px;
+  color: #4b5563;
+  font-size: 18px;
+  line-height: 1.45;
+}
+
+.outright-alert-confirm {
+  min-width: 210px;
+  min-height: 50px;
+  border: 0;
+  border-radius: 8px;
+  background: #12231b;
+  color: #fff;
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.outright-alert-confirm:hover,
+.outright-alert-confirm:focus-visible {
+  background: #0c7a43;
+  outline: 3px solid rgba(12, 122, 67, 0.22);
+  outline-offset: 3px;
+}
+
 /* Value Bets Chiron Ticker */
 .ticker-wrap {
   flex: 1;
