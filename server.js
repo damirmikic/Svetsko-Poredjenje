@@ -381,6 +381,17 @@ function isWorldCupMatch(match) {
   return textIncludesWorldCup(joined) && !textIncludesWomensCompetition(joined);
 }
 
+function getPinnacleQualifyOdds(event) {
+  const periods = event.periods;
+  if (!periods || Array.isArray(periods)) return { home: null, away: null };
+  const p8 = periods["8"];
+  if (!p8?.moneyLine || p8.moneyLine.unavailable) return { home: null, away: null };
+  return {
+    home: normalizePinnaclePrice(p8.moneyLine.homePrice ?? p8.moneyLine.home),
+    away: normalizePinnaclePrice(p8.moneyLine.awayPrice ?? p8.moneyLine.away),
+  };
+}
+
 function getDualsoftOdd(match, code) {
   if (match.odds && Number.isFinite(Number(match.odds[code]))) {
     return Number(match.odds[code]);
@@ -603,7 +614,29 @@ function normalizeDualsoftMatches(bookmaker, payload) {
       away: getDualsoftOdd(match, "3"),
     },
     totalsByLine: dualsoftTotalsByLine(match),
+    qualifyOdds: { home: null, away: null },
   }));
+}
+
+async function enrichDualsoftWithQualifyOdds(bookmaker, matches) {
+  const params = new URLSearchParams({ annex: "0", mobileVersion: "1.23.9", locale: LOCALE });
+  await Promise.all(
+    matches.map(async (match) => {
+      if (!match.externalId) return;
+      try {
+        const url = `${bookmaker.baseUrl}/restapi/offer/${LOCALE}/match/${match.externalId}?${params}`;
+        const payload = await fetchJson(url, Math.min(FEED_TIMEOUT_MS, 5000));
+        const odds = payload?.odds || {};
+        const home = normalizePrice(odds["335"]);
+        const away = normalizePrice(odds["336"]);
+        if (home !== null || away !== null) {
+          match.qualifyOdds = { home, away };
+        }
+      } catch {
+        // qualify odds are optional
+      }
+    }),
+  );
 }
 
 function getNsoftTeamNames(event) {
@@ -662,6 +695,7 @@ function normalizeNsoftMatches(bookmaker, payload) {
           away: getNsoftOdd(event, "2"),
         },
         totalsByLine: nsoftTotalsByLine(event),
+        qualifyOdds: { home: null, away: null },
       };
     });
 }
@@ -731,6 +765,7 @@ function normalizeSuperbetMatches(bookmaker, payload) {
           away: getSuperbetOdd(event, "2"),
         },
         totalsByLine: emptyTotalsByLine(),
+        qualifyOdds: { home: null, away: null },
       };
     });
 }
@@ -885,6 +920,7 @@ function normalizePinnacleMatches(bookmaker, eventsPayload, leaguesPayload) {
           away: normalizePinnaclePrice(moneyline.away ?? moneyline.awayPrice),
         },
         totalsByLine: getPinnacleTotalsByLine(event),
+        qualifyOdds: getPinnacleQualifyOdds(event),
       };
     });
 }
@@ -1267,7 +1303,7 @@ async function fetchMozzartbetMatches(bookmaker, timeoutMs = FEED_TIMEOUT_MS) {
         const chunk = matchIds.slice(i, i + 30);
         const oddsPayload = {
           matchIds: chunk,
-          subgames: [1001001001, 1001001002, 1001001003, 1001003002, 1001003004]
+          subgames: [1001001001, 1001001002, 1001001003, 1001003002, 1001003004, 1001089001, 1001089003]
         };
 
         fetchPromises.push(
@@ -1319,6 +1355,9 @@ async function fetchMozzartbetMatches(bookmaker, timeoutMs = FEED_TIMEOUT_MS) {
       const over25 = getOdd("1001003004");
       const under25 = getOdd("1001003002");
 
+      const homeQualify = getOdd("1001089001");
+      const awayQualify = getOdd("1001089003");
+
       const totalsByLine = emptyTotalsByLine();
       if (over25 !== null || under25 !== null) {
         setTotalsLine(totalsByLine, 2.5, { over: over25, under: under25 });
@@ -1343,6 +1382,7 @@ async function fetchMozzartbetMatches(bookmaker, timeoutMs = FEED_TIMEOUT_MS) {
           away: awayOdd,
         },
         totalsByLine,
+        qualifyOdds: { home: homeQualify, away: awayQualify },
       };
     });
 
@@ -1669,6 +1709,7 @@ async function fetchBookmaker(bookmaker) {
         timeoutMs: bookmaker.id === "maxbet" ? Math.max(FEED_TIMEOUT_MS, 15000) : FEED_TIMEOUT_MS,
       });
       const matches = normalizeDualsoftMatches(bookmaker, payload);
+      await enrichDualsoftWithQualifyOdds(bookmaker, matches);
       return {
         bookmaker,
         status: "ok",
@@ -1776,6 +1817,7 @@ function emptyBookmakerMap() {
         odds: { home: null, draw: null, away: null },
         totals25: emptyTotals25(),
         totalsByLine: emptyTotalsByLine(),
+        qualifyOdds: { home: null, away: null },
         updatedAt: null,
         externalId: null,
       },
@@ -1846,6 +1888,7 @@ function attachOffer(row, offer) {
     odds: offer.odds,
     totalsByLine: offer.totalsByLine || emptyTotalsByLine(),
     totals25: offer.totals25 || emptyTotals25(),
+    qualifyOdds: offer.qualifyOdds || { home: null, away: null },
     updatedAt: offer.updatedAt,
     externalId: offer.externalId,
     timeDiff: newDiff,
@@ -1985,6 +2028,12 @@ function applyPinnacleShinNoVig(match) {
     totalsSource?.totals25?.under,
   ]);
 
+  const pinnacleQ = pinnacle?.qualifyOdds;
+  const [qualifyHome, qualifyAway] =
+    isValidDecimalOdd(pinnacleQ?.home) && isValidDecimalOdd(pinnacleQ?.away)
+      ? shinNoVigOdds([pinnacleQ.home, pinnacleQ.away])
+      : [null, null];
+
   match.bookmakers[PINNACLE_SHIN_BOOKMAKER.id] = {
     bookmakerId: PINNACLE_SHIN_BOOKMAKER.id,
     bookmakerName: PINNACLE_SHIN_BOOKMAKER.name,
@@ -1992,6 +2041,7 @@ function applyPinnacleShinNoVig(match) {
     odds: { home, draw, away },
     totalsByLine: match.goalsLine === null ? emptyTotalsByLine() : { [String(match.goalsLine)]: { line: match.goalsLine, over, under } },
     totals25: { line: match.goalsLine, over, under },
+    qualifyOdds: { home: qualifyHome, away: qualifyAway },
     updatedAt: oddsSource?.updatedAt || totalsSource?.updatedAt || null,
     externalId: oddsSource?.externalId || totalsSource?.externalId || null,
   };
@@ -2070,6 +2120,10 @@ function aggregateMatches(results) {
               draw: offer.odds.draw,
               away: offer.odds.home,
             } : { home: null, draw: null, away: null },
+            qualifyOdds: offer.qualifyOdds ? {
+              home: offer.qualifyOdds.away,
+              away: offer.qualifyOdds.home,
+            } : { home: null, away: null },
           };
           attachOffer(row, adjustedOffer);
         } else {
@@ -2092,6 +2146,10 @@ function aggregateMatches(results) {
                 draw: offer.odds.draw,
                 away: offer.odds.home,
               } : { home: null, draw: null, away: null },
+              qualifyOdds: offer.qualifyOdds ? {
+                home: offer.qualifyOdds.away,
+                away: offer.qualifyOdds.home,
+              } : { home: null, away: null },
             };
             attachOffer(row, adjustedOffer);
           } else {
@@ -2119,6 +2177,7 @@ function aggregateMatches(results) {
         ...match,
         best: getBestOdds(match.bookmakers),
         bestTotals25: getBestTotals25(match.bookmakers),
+        bestQualify: getBestQualifyOdds(match.bookmakers),
         margin: estimateBestMargin(match.bookmakers),
       };
     })
@@ -2145,6 +2204,20 @@ function getBestOdds(bookmakers) {
     best[outcome] = top;
   }
 
+  return best;
+}
+
+function getBestQualifyOdds(bookmakers) {
+  const best = { home: { value: null, bookmakerId: null, bookmakerName: null }, away: { value: null, bookmakerId: null, bookmakerName: null } };
+  for (const entry of Object.values(bookmakers || {})) {
+    if (entry.isReference) continue;
+    for (const side of ["home", "away"]) {
+      const value = Number(entry.qualifyOdds?.[side]);
+      if (isValidDecimalOdd(value) && (!best[side].value || value > best[side].value)) {
+        best[side] = { value, bookmakerId: entry.bookmakerId, bookmakerName: entry.bookmakerName };
+      }
+    }
+  }
   return best;
 }
 
