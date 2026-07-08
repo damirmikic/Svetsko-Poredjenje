@@ -23,6 +23,7 @@
             <button class="active" type="button" data-view="all">1X2</button>
             <button type="button" data-view="today">Danasnji mecevi</button>
             <button type="button" data-view="goals">Golovi</button>
+            <button type="button" data-view="qualify">Ide dalje</button>
             <button type="button" data-view="accumulator">Množenje kvota</button>
           </div>
           <button class="refresh-button" id="refreshButton" type="button">
@@ -35,7 +36,7 @@
 
       <main class="workspace">
         <aside class="filter-rail" aria-label="Filteri">
-          <section id="accumulatorFilterSection" style="display: none;">
+          <section id="accumulatorFilterSection" class="hidden">
             <h2>Množenje kvota</h2>
             <label class="range-control">
               <span>Broj mečeva (X): <strong id="accumulatorXValue">4</strong></span>
@@ -48,7 +49,7 @@
               <button type="button" class="preset-btn" data-val="8">8 mečeva</button>
               <button type="button" class="preset-btn" data-val="10">10 mečeva</button>
             </div>
-            <label class="select-label" style="margin-top: 14px;">
+            <label class="select-label">
               <span>Tip opklade</span>
               <select id="accumulatorTypeSelect">
                 <option value="favorite">Favorit (Konačan ishod)</option>
@@ -119,7 +120,7 @@
               <p id="resultNote">Ucitavanje feedova...</p>
             </div>
 
-            <div class="ticker-wrap" id="valueTickerWrap" style="display: none;">
+            <div class="ticker-wrap hidden" id="valueTickerWrap">
               <div class="ticker-content-container">
                 <div class="ticker" id="valueTicker"></div>
               </div>
@@ -141,7 +142,7 @@
             </table>
           </div>
 
-          <div class="accumulator-view" id="accumulatorView" style="display: none;"></div>
+          <div class="accumulator-view hidden" id="accumulatorView"></div>
         </section>
 
       </main>

@@ -25,6 +25,7 @@ const pinnacleLeagueCodeByCompetition = {
 };
 const matchWinnerOutcomes = ["home", "draw", "away"];
 const totalGoalsOutcomes = ["over25", "under25"];
+const qualifyOutcomes = ["qualifyHome", "qualifyAway"];
 const todayOutcomes = [...matchWinnerOutcomes, "over25", "under25"];
 const outrightAlertLeadMs = 5 * 60 * 1000;
 const outrightAlertStoragePrefix = "outright-alert-confirmed:";
@@ -34,6 +35,8 @@ const marketLabels = {
   away: "2",
   over25: "Over",
   under25: "Under",
+  qualifyHome: "1",
+  qualifyAway: "2",
 };
 
 const state = {
@@ -539,6 +542,12 @@ function visibleMatches() {
   return matches.filter((match) => {
     if (match.kickOffTime && Number(match.kickOffTime) < now) return false;
     if (state.view === "today" && !isTodayMatch(match)) return false;
+    if (state.view === "qualify") {
+      const hasQualify = Object.values(match.bookmakers || {}).some(
+        (e) => isValidOdd(e.qualifyOdds?.home) || isValidOdd(e.qualifyOdds?.away),
+      );
+      if (!hasQualify) return false;
+    }
 
     const haystack = `${match.home} ${match.away} ${match.leagueName}`.toLocaleLowerCase("sr-RS");
     return !query || haystack.includes(query);
@@ -555,15 +564,16 @@ function renderView() {
     all: `${competitionLabel} - 1X2 kvote`,
     today: "Danasnji mecevi - 1X2 i golovi 2.5",
     goals: `${competitionLabel} - Golovi 2.5`,
+    qualify: `${competitionLabel} - Ide dalje (nokaut faza)`,
     accumulator: "Množenje kvota na favorite za naredne mečeve",
   };
   els.tableTitle.textContent = titles[state.view] || titles.all;
   els.oddsTable.classList.toggle("is-today", state.view === "today");
 
   const isAcc = state.view === "accumulator";
-  els.oddsTableWrap.style.display = isAcc ? "none" : "block";
-  els.accumulatorView.style.display = isAcc ? "flex" : "none";
-  els.accumulatorFilterSection.style.display = isAcc ? "block" : "none";
+  els.oddsTableWrap.classList.toggle("hidden", isAcc);
+  els.accumulatorView.classList.toggle("hidden", !isAcc);
+  els.accumulatorFilterSection.classList.toggle("hidden", !isAcc);
 
   const noVigLimitSec = els.noVigLimitInput?.closest("section");
   const thresholdSec = els.oddsThresholdInput?.closest("section");
@@ -573,18 +583,23 @@ function renderView() {
 
 function activeOutcomes() {
   if (state.view === "goals") return totalGoalsOutcomes;
+  if (state.view === "qualify") return qualifyOutcomes;
   return state.view === "today" ? todayOutcomes : matchWinnerOutcomes;
 }
 
 function outcomeValue(entry, outcome) {
   if (outcome === "over25") return entry?.totals25?.over;
   if (outcome === "under25") return entry?.totals25?.under;
+  if (outcome === "qualifyHome") return entry?.qualifyOdds?.home;
+  if (outcome === "qualifyAway") return entry?.qualifyOdds?.away;
   return entry?.odds?.[outcome];
 }
 
 function outcomeBest(match, outcome) {
   if (outcome === "over25") return match.bestTotals25?.over;
   if (outcome === "under25") return match.bestTotals25?.under;
+  if (outcome === "qualifyHome") return match.bestQualify?.home;
+  if (outcome === "qualifyAway") return match.bestQualify?.away;
   return match.best?.[outcome];
 }
 
@@ -900,6 +915,20 @@ function estimateBestMargin(bookmakers) {
   return Number(((values.reduce((sum, value) => sum + 1 / value, 0) - 1) * 100).toFixed(2));
 }
 
+function computeBestQualify(bookmakers) {
+  const best = { home: { value: null, bookmakerId: null, bookmakerName: null }, away: { value: null, bookmakerId: null, bookmakerName: null } };
+  for (const entry of Object.values(bookmakers || {})) {
+    if (entry.isReference) continue;
+    for (const side of ["home", "away"]) {
+      const value = Number(entry.qualifyOdds?.[side]);
+      if (isValidOdd(value) && (!best[side].value || value > best[side].value)) {
+        best[side] = { value, bookmakerId: entry.bookmakerId, bookmakerName: entry.bookmakerName };
+      }
+    }
+  }
+  return best;
+}
+
 function getBestTotals25(bookmakers) {
   const best = {};
   for (const field of ["over", "under"]) {
@@ -971,6 +1000,12 @@ function applyNoVigReference(match) {
     totalsSource?.totals25?.under,
   ]);
 
+  const pinnacleQ = match.bookmakers.pinnacle?.qualifyOdds;
+  const [qualifyHome, qualifyAway] =
+    isValidOdd(pinnacleQ?.home) && isValidOdd(pinnacleQ?.away)
+      ? shinNoVigOdds([pinnacleQ.home, pinnacleQ.away])
+      : [null, null];
+
   match.bookmakers.pinnacle_shin = {
     ...match.bookmakers.pinnacle_shin,
     bookmakerId: "pinnacle_shin",
@@ -979,8 +1014,20 @@ function applyNoVigReference(match) {
     odds: { home, draw, away },
     totalsByLine: match.goalsLine === null ? emptyTotalsByLine() : { [String(match.goalsLine)]: { line: match.goalsLine, over, under } },
     totals25: { line: match.goalsLine, over, under },
+    qualifyOdds: { home: qualifyHome, away: qualifyAway },
     updatedAt: oddsSource?.updatedAt || totalsSource?.updatedAt || null,
     externalId: oddsSource?.externalId || totalsSource?.externalId || null,
+  };
+}
+
+function getPinnacleQualifyOdds(event) {
+  const periods = event.periods;
+  if (!periods || Array.isArray(periods)) return { home: null, away: null };
+  const p8 = periods["8"];
+  if (!p8?.moneyLine || p8.moneyLine.unavailable) return { home: null, away: null };
+  return {
+    home: normalizePrice(p8.moneyLine.homePrice ?? p8.moneyLine.home),
+    away: normalizePrice(p8.moneyLine.awayPrice ?? p8.moneyLine.away),
   };
 }
 
@@ -998,6 +1045,7 @@ function normalizePinnacleOffer(event) {
       away: normalizePrice(moneyline.away ?? moneyline.awayPrice),
     },
     totalsByLine,
+    qualifyOdds: getPinnacleQualifyOdds(event),
   };
 }
 
@@ -1047,6 +1095,7 @@ async function hydratePinnacleFromBrowser() {
       totalsByLine: Object.keys(offer.totalsByLine || {}).length
         ? offer.totalsByLine
         : match.bookmakers.pinnacle?.totalsByLine || emptyTotalsByLine(),
+      qualifyOdds: offer.qualifyOdds || match.bookmakers.pinnacle?.qualifyOdds || { home: null, away: null },
       updatedAt: Date.now(),
       externalId: offer.externalId,
     };
@@ -1054,6 +1103,7 @@ async function hydratePinnacleFromBrowser() {
     applyNoVigReference(match);
     match.best = getBestOdds(match.bookmakers);
     match.bestTotals25 = getBestTotals25(match.bookmakers);
+    match.bestQualify = computeBestQualify(match.bookmakers);
     match.margin = estimateBestMargin(match.bookmakers);
   }
 
@@ -1117,8 +1167,16 @@ function goalsMaxOdds(match) {
   };
 }
 
+function qualifyMaxOdds(match) {
+  const best = match.bestQualify?.home;
+  if (!isValidOdd(best?.value)) return null;
+  return { value: best.value, label: "1 ide dalje" };
+}
+
 function marketMaxOdds(match) {
-  return state.view === "goals" ? goalsMaxOdds(match) : favoriteMaxOdds(match);
+  if (state.view === "goals") return goalsMaxOdds(match);
+  if (state.view === "qualify") return qualifyMaxOdds(match);
+  return favoriteMaxOdds(match);
 }
 
 function goalsMargin(match) {
@@ -1128,8 +1186,17 @@ function goalsMargin(match) {
   return (1 / over + 1 / under - 1) * 100;
 }
 
+function qualifyMargin(match) {
+  const home = Number(match.bestQualify?.home?.value);
+  const away = Number(match.bestQualify?.away?.value);
+  if (!isValidOdd(home) || !isValidOdd(away)) return null;
+  return (1 / home + 1 / away - 1) * 100;
+}
+
 function marketMargin(match) {
-  return state.view === "goals" ? goalsMargin(match) : match.margin;
+  if (state.view === "goals") return goalsMargin(match);
+  if (state.view === "qualify") return qualifyMargin(match);
+  return match.margin;
 }
 
 function renderNoVigLimit() {
@@ -1240,8 +1307,8 @@ function renderRows(matches) {
             text: "Filter obuhvata meceve od danas u 00:00 do sutra u 07:00.",
           }
         : {
-            title: "Nema World Cup meceva u aktivnim feedovima.",
-            text: "Dashboard je spreman; cim kladionice oznace SP ligu ili market, redovi ce se pojaviti ovde.",
+            title: `Nema ${state.data?.filter?.competition || "World Cup"} meceva u aktivnim feedovima.`,
+            text: "Dashboard je spreman; cim kladionice oznace ligu ili market, redovi ce se pojaviti ovde.",
           };
 
     els.oddsBody.innerHTML = `
@@ -1349,18 +1416,21 @@ function renderSummary(matches) {
   els.activeFeeds.textContent = `${okFeeds}/${feeds.length || bookmakerOrder.length}`;
   els.bestMargin.textContent = bestMargin === null ? "-" : `${bestMargin.toFixed(2)}%`;
   els.updatedAt.textContent = state.data?.generatedAt ? formatDateTime(state.data.generatedAt) : "-";
+  const competitionLabel = state.data?.filter?.competition || "World Cup";
   els.resultNote.textContent =
     state.data?.filter?.note ||
     (state.view === "today"
       ? `${matches.length} danasnjih mec(eva), period do sutra u 07:00.`
       : state.view === "goals"
-        ? `${matches.length} World Cup mec(eva), golovi 2.5 ili 3.5, ${state.data?.elapsedMs || 0} ms proxy vreme.`
-        : `${matches.length} World Cup mec(eva), ${state.data?.elapsedMs || 0} ms proxy vreme.`);
+        ? `${matches.length} ${competitionLabel} mec(eva), golovi 2.5 ili 3.5, ${state.data?.elapsedMs || 0} ms proxy vreme.`
+        : state.view === "qualify"
+          ? `${matches.length} nokaut mec(eva) sa kvotama "ide dalje", ${state.data?.elapsedMs || 0} ms proxy vreme.`
+          : `${matches.length} ${competitionLabel} mec(eva), ${state.data?.elapsedMs || 0} ms proxy vreme.`);
 }
 
 function updateValueTicker(matches) {
   if (!matches || !matches.length) {
-    els.valueTickerWrap.style.display = "none";
+    els.valueTickerWrap.classList.add("hidden");
     return;
   }
 
@@ -1414,7 +1484,7 @@ function updateValueTicker(matches) {
 
   if (valueBets.length === 0) {
     els.valueTicker.innerHTML = `<span class="ticker-item">Trenutno nema value kvota iznad Pinnacle no-vig reference.</span>`;
-    els.valueTickerWrap.style.display = "flex";
+    els.valueTickerWrap.classList.remove("hidden");
     return;
   }
 
@@ -1426,7 +1496,7 @@ function updateValueTicker(matches) {
     .join("");
 
   els.valueTicker.innerHTML = tickerHtml + tickerHtml; // Double it for seamless loop scrolling
-  els.valueTickerWrap.style.display = "flex";
+  els.valueTickerWrap.classList.remove("hidden");
 }
 
 function calculateAccumulator(matches, X, type = "favorite") {

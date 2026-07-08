@@ -992,6 +992,7 @@ select,
 
 /* Value Bets Chiron Ticker */
 .ticker-wrap {
+  display: flex;
   flex: 1;
   max-width: 480px;
   overflow: hidden;
@@ -1512,4 +1513,12 @@ select,
 .legs-table td.leg-odd-cell.missing {
   background: #fafbf9;
   color: #a5aea4;
+}
+
+.hidden {
+  display: none !important;
+}
+
+#accumulatorFilterSection .select-label {
+  margin-top: 14px;
 }
