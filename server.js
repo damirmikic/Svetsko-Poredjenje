@@ -68,6 +68,111 @@ const WOMENS_COMPETITION_TERMS = [
   " w ",
 ];
 
+const COMPETITIONS = [
+  {
+    id: "world-cup",
+    label: "World Cup 2026",
+    terms: WORLD_CUP_TERMS,
+    pinnacleLeagueCode: "fifa-world-cup",
+    nsoftTournamentId: 30,
+    nsoftDateRange: { from: "2026-06-07T00:00:00", to: "2026-07-20T23:59:59" },
+    superbetTournaments: SUPERBET_WORLD_CUP_TOURNAMENTS,
+    superbetDateRange: { startDate: "2026-06-07T00:00:00.000Z", endDate: "2028-06-07T00:00:00.000Z" },
+    oddsmathLeagueId: 115437,
+    btfTerms: ["world cup"],
+  },
+  {
+    id: "epl",
+    label: "England - Premier League",
+    pinnacleLeagueCode: "england-premier-league",
+    nsoftTournamentId: 33,
+    superbetTournaments: ["106"],
+    oddsmathLeagueId: 1281,
+    dualsoftCountry: "England",
+    dualsoftLeagueName: "Premier League",
+    mozzartCountryTerm: "england",
+    mozzartLeagueTerm: "premier league",
+    btfTerms: ["premier league"],
+  },
+  {
+    id: "bundesliga",
+    label: "Germany - Bundesliga",
+    pinnacleLeagueCode: "germany-bundesliga",
+    nsoftTournamentId: 87,
+    superbetTournaments: ["245"],
+    oddsmathLeagueId: 1219,
+    dualsoftCountry: "Germany",
+    dualsoftLeagueName: "Bundesliga",
+    mozzartCountryTerm: "germany",
+    mozzartLeagueTerm: "bundesliga",
+    btfTerms: ["bundesliga"],
+  },
+  {
+    id: "ligue-1",
+    label: "France - Ligue 1",
+    pinnacleLeagueCode: "france-ligue-1",
+    nsoftTournamentId: 84,
+    superbetTournaments: ["100"],
+    oddsmathLeagueId: 1083,
+    dualsoftCountry: "France",
+    dualsoftLeagueName: "Ligue 1",
+    mozzartCountryTerm: "france",
+    mozzartLeagueTerm: "ligue 1",
+    btfTerms: ["ligue 1"],
+  },
+  {
+    id: "serie-a",
+    label: "Italy - Serie A",
+    pinnacleLeagueCode: "italy-serie-a",
+    nsoftTournamentId: 51,
+    superbetTournaments: ["104"],
+    oddsmathLeagueId: 1315,
+    dualsoftCountry: "Italy",
+    dualsoftLeagueName: "Serie A",
+    mozzartCountryTerm: "italy",
+    mozzartLeagueTerm: "serie a",
+    btfTerms: ["serie a"],
+  },
+  {
+    id: "laliga",
+    label: "Spain - LaLiga",
+    pinnacleLeagueCode: "spain-la-liga",
+    nsoftTournamentId: 15,
+    superbetTournaments: ["98"],
+    oddsmathLeagueId: 1122,
+    dualsoftCountry: "Spain",
+    dualsoftLeagueName: "LaLiga",
+    mozzartCountryTerm: "spain",
+    mozzartLeagueTerm: "la liga",
+    btfTerms: ["la liga", "laliga"],
+  },
+];
+
+const DEFAULT_COMPETITION_ID = "world-cup";
+
+function getCompetitionById(id) {
+  return COMPETITIONS.find((competition) => competition.id === id) || COMPETITIONS.find((competition) => competition.id === DEFAULT_COMPETITION_ID);
+}
+
+function defaultDateRangeIso(days = 180) {
+  const from = new Date();
+  const to = new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
+  return {
+    from: from.toISOString().slice(0, 19),
+    to: to.toISOString().slice(0, 19),
+  };
+}
+
+function defaultSuperbetDateRange(days = 180) {
+  const from = new Date();
+  from.setUTCHours(0, 0, 0, 0);
+  const to = new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
+  return {
+    startDate: from.toISOString(),
+    endDate: to.toISOString(),
+  };
+}
+
 const BOOKMAKERS = [
   {
     id: "pinnacle",
@@ -112,7 +217,6 @@ const BOOKMAKERS = [
     type: "nsoft",
     baseUrl: "https://sports-sm-distribution-api.de-2.nsoftcdn.com",
     companyUuid: "4f54c6aa-82a9-475d-bf0e-dc02ded89225",
-    tournamentId: 30,
   },
   {
     id: "betinasia",
@@ -141,17 +245,17 @@ const NO_VIG_FALLBACK_BOOKMAKER = "betinasia";
 const DISPLAY_BOOKMAKERS = [PINNACLE_SHIN_BOOKMAKER, ...BOOKMAKERS];
 const FEED_BOOKMAKERS = BOOKMAKERS;
 
-const mozzartbetCache = {
-  expiresAt: 0,
-  promise: null,
-  result: null,
-};
+const mozzartbetCache = new Map();
+const oddsmathCache = new Map();
 
-const oddsmathCache = {
-  expiresAt: 0,
-  promise: null,
-  result: null,
-};
+function getCacheEntry(cacheMap, key) {
+  let entry = cacheMap.get(key);
+  if (!entry) {
+    entry = { expiresAt: 0, promise: null, result: null };
+    cacheMap.set(key, entry);
+  }
+  return entry;
+}
 
 const btfoddsCache = {
   expiresAt: 0,
@@ -160,7 +264,8 @@ const btfoddsCache = {
   history: {},
 };
 
-async function fetchBtfOdds() {
+async function fetchBtfOdds(competition) {
+  const btfTerms = (competition?.btfTerms || ["world cup"]).map((term) => term.toLocaleLowerCase("sr-RS"));
   const url = 'https://www.btfodds.com/classes/soccer/football-odds-trends/money-way-ajax.php?alldata=%7B%22id%22:%221%22,%22sport%22:%22soccer%22,%22pg%22:%22soccer/football-odds-trends/money-way%22,%22date%22:%22next-3days%22,%22country%22:%22all%22,%22bookie%22:%2212X%22,%22type%22:%22league%22,%22sort%22:%22OV%22,%22oddType%22:%22eu%22,%22tz%22:%22%22,%22upd%22:5%7D';
   try {
     const res = await fetch(url, {
@@ -181,7 +286,8 @@ async function fetchBtfOdds() {
         if (match) currentLeague = match[1].trim();
         continue;
       }
-      if (row.includes('class="mw"') && currentLeague.includes('World Cup')) {
+      const currentLeagueLower = currentLeague.toLocaleLowerCase("sr-RS");
+      if (row.includes('class="mw"') && btfTerms.some((term) => currentLeagueLower.includes(term))) {
         let home = null;
         let away = null;
         const aTagMatch = row.match(/<td class="event"><a[^>]*>(.*?)<\/a><\/td>/);
@@ -268,12 +374,13 @@ function dualsoftOfferUrl(baseUrl) {
   return `${baseUrl}/restapi/offer/${LOCALE}/sport/S/mob?${params.toString()}`;
 }
 
-function nsoftWorldCupUrl(bookmaker) {
+function nsoftCompetitionUrl(bookmaker, competition) {
+  const dateRange = competition.nsoftDateRange || defaultDateRangeIso();
   const params = new URLSearchParams({
     companyUuid: bookmaker.companyUuid,
-    "filter[from]": "2026-06-07T00:00:00",
-    "filter[to]": "2026-07-20T23:59:59",
-    "filter[tournamentId]": String(bookmaker.tournamentId),
+    "filter[from]": dateRange.from,
+    "filter[to]": dateRange.to,
+    "filter[tournamentId]": String(competition.nsoftTournamentId),
     timezone: "Europe/Belgrade",
     dataFormat: JSON.stringify({
       default: "object",
@@ -298,12 +405,13 @@ function nsoftWorldCupUrl(bookmaker) {
   return `${bookmaker.baseUrl}/api/v1/events?${params.toString()}`;
 }
 
-function superbetWorldCupUrl(bookmaker) {
+function superbetCompetitionUrl(bookmaker, competition) {
+  const dateRange = competition.superbetDateRange || defaultSuperbetDateRange();
   const params = new URLSearchParams({
     sports: "5",
-    tournaments: SUPERBET_WORLD_CUP_TOURNAMENTS.join(","),
-    startDate: "2026-06-07T00:00:00.000Z",
-    endDate: "2028-06-07T00:00:00.000Z",
+    tournaments: competition.superbetTournaments.join(","),
+    startDate: dateRange.startDate,
+    endDate: dateRange.endDate,
   });
 
   return `${bookmaker.baseUrl}/sr-Latn-RS/prematch?${params.toString()}`;
@@ -354,8 +462,12 @@ function pinnacleLeagueOddsUrl(leagueCode = PINNACLE_LEAGUE_CODE) {
 }
 
 function textIncludesWorldCup(value) {
+  return textIncludesTerms(value, WORLD_CUP_TERMS);
+}
+
+function textIncludesTerms(value, terms) {
   const haystack = String(value || "").toLocaleLowerCase("sr-RS");
-  return WORLD_CUP_TERMS.some((term) => haystack.includes(term));
+  return (terms || []).some((term) => haystack.includes(term));
 }
 
 function textIncludesWomensCompetition(value) {
@@ -369,7 +481,7 @@ function textIncludesWomensCompetition(value) {
   return WOMENS_COMPETITION_TERMS.some((term) => normalized.includes(term));
 }
 
-function isWorldCupMatch(match) {
+function matchesCompetitionTerms(match, competition) {
   const joined = [
     match.leagueName,
     match.leagueToken,
@@ -378,7 +490,21 @@ function isWorldCupMatch(match) {
     match.away,
   ].join(" ");
 
-  return textIncludesWorldCup(joined) && !textIncludesWomensCompetition(joined);
+  return textIncludesTerms(joined, competition.terms) && !textIncludesWomensCompetition(joined);
+}
+
+function matchesDualsoftCompetition(match, competition) {
+  if (competition.dualsoftCountry && competition.dualsoftLeagueName) {
+    const token = String(match.leagueGroupToken || "");
+    const name = String(match.leagueName || "").trim().toLocaleLowerCase("sr-RS");
+    const womensJoined = [match.leagueName, match.leagueGroupToken, match.home, match.away].join(" ");
+    return (
+      token.includes(competition.dualsoftCountry) &&
+      name === competition.dualsoftLeagueName.toLocaleLowerCase("sr-RS") &&
+      !textIncludesWomensCompetition(womensJoined)
+    );
+  }
+  return matchesCompetitionTerms(match, competition);
 }
 
 function getDualsoftOdd(match, code) {
@@ -581,10 +707,10 @@ function nsoftTotalsByLine(event) {
   return totalsByLine;
 }
 
-function normalizeDualsoftMatches(bookmaker, payload) {
+function normalizeDualsoftMatches(bookmaker, payload, competition) {
   const matches = Array.isArray(payload?.esMatches) ? payload.esMatches : [];
 
-  return matches.filter(isWorldCupMatch).map((match) => ({
+  return matches.filter((match) => matchesDualsoftCompetition(match, competition)).map((match) => ({
     bookmakerId: bookmaker.id,
     bookmakerName: bookmaker.name,
     source: bookmaker.type,
@@ -632,13 +758,13 @@ function getNsoftTotals25(event) {
   return totalsForLine(nsoftTotalsByLine(event), 2.5);
 }
 
-function normalizeNsoftMatches(bookmaker, payload) {
+function normalizeNsoftMatches(bookmaker, payload, competition) {
   const events = Array.isArray(payload?.data?.events) ? payload.data.events : [];
 
   return events
     .filter(
       (event) =>
-        (Number(event.f) === Number(bookmaker.tournamentId) || textIncludesWorldCup(event.g)) &&
+        Number(event.f) === Number(competition.nsoftTournamentId) &&
         !textIncludesWomensCompetition([event.g, event.j, Object.values(event.p || {}).map((item) => item.d).join(" ")].join(" ")),
     )
     .map((event) => {
@@ -652,7 +778,7 @@ function normalizeNsoftMatches(bookmaker, payload) {
         matchCode: event.r,
         home: normalizeTeamName(home),
         away: normalizeTeamName(away),
-        leagueName: "World Cup 2026",
+        leagueName: normalizeCompetitionName(event.g) || competition.label,
         leagueGroup: String(event.i || ""),
         kickOffTime: event.n ? new Date(event.n).getTime() : null,
         updatedAt: Date.now(),
@@ -697,14 +823,14 @@ function getSuperbetOdd(event, shortcut) {
 }
 
 
-function normalizeSuperbetMatches(bookmaker, payload) {
+function normalizeSuperbetMatches(bookmaker, payload, competition) {
   const events = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
 
   return events
     .filter((event) => {
       const [home, away] = getSuperbetTeamNames(event);
       return (
-        SUPERBET_WORLD_CUP_TOURNAMENTS.includes(String(event.fixture?.tournament_id)) &&
+        competition.superbetTournaments.includes(String(event.fixture?.tournament_id)) &&
         !textIncludesWomensCompetition([event.fixture?.tournament_name, home, away].join(" "))
       );
     })
@@ -721,7 +847,7 @@ function normalizeSuperbetMatches(bookmaker, payload) {
         matchCode: event.fixture?.event_code,
         home: normalizeTeamName(home),
         away: normalizeTeamName(away),
-        leagueName: "World Cup 2026",
+        leagueName: competition.label,
         leagueGroup: String(event.fixture?.tournament_id || ""),
         kickOffTime: toTimestamp(kickOffTime),
         updatedAt: Date.now(),
@@ -840,19 +966,19 @@ function getPinnacleKickoff(event) {
   return event.time || event.starts || event.startTime || event.startDate || event.eventDate || event.cutoffAt;
 }
 
-function normalizePinnacleMatches(bookmaker, eventsPayload, leaguesPayload) {
+function normalizePinnacleMatches(bookmaker, eventsPayload, leaguesPayload, competition) {
   const leaguesById = new Map(getPinnacleLeagues(leaguesPayload).map((league) => [String(league.id), league]));
 
   return getPinnacleEvents(eventsPayload)
     .filter((event) => {
       const status = String(event.status || "").toLocaleLowerCase("en-US");
-      const hasLeagueFilter = PINNACLE_LEAGUE_IDS.length > 0;
+      const hasLeagueFilter = PINNACLE_LEAGUE_IDS.length > 0 || !competition.terms?.length;
       const league = leaguesById.get(String(event.leagueId || event.league?.id));
       const leagueName = event.leagueName || event.league?.name || league?.name || league?.englishName;
       const [home, away] = getPinnacleTeamNames(event);
-      const isWorldCup = hasLeagueFilter || textIncludesWorldCup([leagueName, home, away].join(" "));
+      const isMatch = hasLeagueFilter || textIncludesTerms([leagueName, home, away].join(" "), competition.terms);
       return (
-        isWorldCup &&
+        isMatch &&
         !textIncludesWomensCompetition([leagueName, home, away].join(" ")) &&
         !["settled", "cancelled", "canceled"].includes(status)
       );
@@ -986,6 +1112,61 @@ function normalizeTeamName(value) {
     ["b and h", "Bosnia and Herzegovina"],
     ["bandh", "Bosnia and Herzegovina"],
     ["czech r", "Czech Republic"],
+
+    // England - Premier League
+    ["coventry", "Coventry City"],
+    ["hull", "Hull City"],
+    ["manchester utd", "Manchester United"],
+    ["nottingham", "Nottingham Forest"],
+    ["leeds", "Leeds United"],
+    ["tottenham", "Tottenham Hotspur"],
+    ["brighton", "Brighton and Hove Albion"],
+    ["brighton and hove albion", "Brighton and Hove Albion"],
+    ["ipswich", "Ipswich Town"],
+    ["newcastle", "Newcastle United"],
+    ["bournemouth afc", "Bournemouth"],
+
+    // Germany - Bundesliga
+    ["bayern", "Bayern Munich"],
+    ["bayern munchen", "Bayern Munich"],
+    ["vfb stuttgart", "Stuttgart"],
+    ["schalke", "Schalke 04"],
+    ["m'gladbach", "Borussia Monchengladbach"],
+    ["mainz", "Mainz 05"],
+    ["fsv mainz 05", "Mainz 05"],
+    ["frankfurt", "Eintracht Frankfurt"],
+    ["sc freiburg", "Freiburg"],
+    ["werder", "Werder Bremen"],
+    ["koln", "FC Koln"],
+    ["tsg hoffenheim", "Hoffenheim"],
+    ["sv elversberg", "Elversberg"],
+    ["leverkusen", "Bayer Leverkusen"],
+    ["dortmund", "Borussia Dortmund"],
+    ["hamburger", "Hamburger SV"],
+
+    // France - Ligue 1
+    ["olympique marseille", "Marseille"],
+    ["olympique lyon", "Lyon"],
+    ["as monaco", "Monaco"],
+    ["psg", "Paris Saint-Germain"],
+    ["paris saint germain", "Paris Saint-Germain"],
+
+    // Italy - Serie A
+    ["torino fc", "Torino"],
+    ["milan", "AC Milan"],
+    ["as roma", "Roma"],
+    ["inter", "Internazionale"],
+    ["inter milano", "Internazionale"],
+    ["inter milan", "Internazionale"],
+    ["monza brianza", "Monza"],
+
+    // Spain - LaLiga
+    ["rcd espanyol", "Espanyol"],
+    ["betis", "Real Betis"],
+    ["ath bilbao", "Athletic Bilbao"],
+    ["celta", "Celta Vigo"],
+    ["atl madrid", "Atletico Madrid"],
+    ["la coruna", "Deportivo La Coruna"],
   ]);
 
   return aliases.get(canonical) || clean;
@@ -1092,10 +1273,14 @@ async function fetchPinnacleJson(url) {
   }
 }
 
-function getPinnacleWorldCupLeagueIds(leaguesPayload) {
+function getPinnacleCompetitionLeagueIds(leaguesPayload, competition) {
   if (PINNACLE_LEAGUE_IDS.length) return PINNACLE_LEAGUE_IDS;
   return getPinnacleLeagues(leaguesPayload)
-    .filter((league) => textIncludesWorldCup([league.name, league.englishName, league.leagueCode].join(" ")))
+    .filter(
+      (league) =>
+        String(league.leagueCode) === competition.pinnacleLeagueCode ||
+        textIncludesTerms([league.name, league.englishName, league.leagueCode].join(" "), competition.terms || []),
+    )
     .map((league) => String(league.id))
     .filter(Boolean);
 }
@@ -1206,7 +1391,22 @@ async function fetchSseSnapshot(url, timeoutMs = FEED_TIMEOUT_MS) {
 }
 
 
-async function fetchMozzartbetMatches(bookmaker, timeoutMs = FEED_TIMEOUT_MS) {
+function matchesMozzartCompetition(item, competition) {
+  const home = item.participants?.[0]?.name;
+  const away = item.participants?.[1]?.name;
+  const competitionName = String(item.competition?.name || "");
+  const joined = [competitionName, home, away].join(" ");
+  if (textIncludesWomensCompetition(joined)) return false;
+
+  if (competition.mozzartCountryTerm && competition.mozzartLeagueTerm) {
+    const lower = competitionName.toLocaleLowerCase("sr-RS");
+    return lower.includes(competition.mozzartCountryTerm) && lower.includes(competition.mozzartLeagueTerm);
+  }
+
+  return textIncludesTerms(joined, competition.terms);
+}
+
+async function fetchMozzartbetMatches(bookmaker, competition, timeoutMs = FEED_TIMEOUT_MS) {
   const urlOffer = "https://www.mozzartbet.ng/betOffer2";
   const urlOdds = "https://www.mozzartbet.ng/getBettingOdds";
 
@@ -1245,21 +1445,11 @@ async function fetchMozzartbetMatches(bookmaker, timeoutMs = FEED_TIMEOUT_MS) {
     const offerData = await offerResponse.json();
     const allItems = Array.isArray(offerData?.matches) ? offerData.matches : [];
 
-    const worldCupItems = allItems.filter(match => {
-      const home = match.participants?.[0]?.name;
-      const away = match.participants?.[1]?.name;
-      const joined = [
-        match.competition?.name,
-        home,
-        away,
-      ].join(" ");
-
-      return textIncludesWorldCup(joined) && !textIncludesWomensCompetition(joined);
-    });
+    const competitionItems = allItems.filter((match) => matchesMozzartCompetition(match, competition));
 
     let oddsData = [];
-    if (worldCupItems.length > 0) {
-      const matchIds = worldCupItems.map(m => m.id);
+    if (competitionItems.length > 0) {
+      const matchIds = competitionItems.map(m => m.id);
       
       // MozzartBet NG limits getBettingOdds requests, fetch in chunks of 30 concurrently
       const fetchPromises = [];
@@ -1304,7 +1494,7 @@ async function fetchMozzartbetMatches(bookmaker, timeoutMs = FEED_TIMEOUT_MS) {
       oddsData.forEach(o => oddsById[o.id] = o.kodds || {});
     }
 
-    const matches = worldCupItems.map(item => {
+    const matches = competitionItems.map(item => {
       const home = item.participants?.[0]?.name || "";
       const away = item.participants?.[1]?.name || "";
       const kickOffTime = Number(item.startTime) || null;
@@ -1333,7 +1523,7 @@ async function fetchMozzartbetMatches(bookmaker, timeoutMs = FEED_TIMEOUT_MS) {
         matchCode: item.matchNumber,
         home: normalizeTeamName(home),
         away: normalizeTeamName(away),
-        leagueName: "World Cup 2026",
+        leagueName: normalizeCompetitionName(item.competition?.name) || competition.label,
         leagueGroup: String(item.competition?.id || ""),
         kickOffTime,
         updatedAt: Date.now(),
@@ -1362,21 +1552,22 @@ async function fetchMozzartbetMatches(bookmaker, timeoutMs = FEED_TIMEOUT_MS) {
 }
 
 
-async function getMozzartbetFeed(bookmaker) {
+async function getMozzartbetFeed(bookmaker, competition) {
+  const entry = getCacheEntry(mozzartbetCache, competition.id);
   const now = Date.now();
-  if (mozzartbetCache.result && mozzartbetCache.expiresAt > now) {
+  if (entry.result && entry.expiresAt > now) {
     return {
-      ...mozzartbetCache.result,
+      ...entry.result,
       cached: true,
-      message: mozzartbetCache.result.message || "Using cached Mozzartbet feed.",
+      message: entry.result.message || "Using cached Mozzartbet feed.",
     };
   }
 
-  if (!mozzartbetCache.promise) {
-    mozzartbetCache.promise = fetchMozzartbetMatches(bookmaker)
+  if (!entry.promise) {
+    entry.promise = fetchMozzartbetMatches(bookmaker, competition)
       .then((result) => {
-        mozzartbetCache.result = result;
-        mozzartbetCache.expiresAt = Date.now() + 60000;
+        entry.result = result;
+        entry.expiresAt = Date.now() + 60000;
         return result;
       })
       .catch((error) => {
@@ -1387,22 +1578,20 @@ async function getMozzartbetFeed(bookmaker) {
           matches: [],
           message: error.message,
         };
-        mozzartbetCache.result = errorResult;
-        mozzartbetCache.expiresAt = Date.now() + 180000; // Cache failures for 3 minutes to cool down
+        entry.result = errorResult;
+        entry.expiresAt = Date.now() + 180000; // Cache failures for 3 minutes to cool down
         return errorResult;
       })
       .finally(() => {
-        mozzartbetCache.promise = null;
+        entry.promise = null;
       });
   }
 
-  return mozzartbetCache.promise;
+  return entry.promise;
 }
 
-const ODDSMATH_LEAGUE_ID = Number(process.env.ODDSMATH_LEAGUE_ID || 115437);
-
-async function fetchOddsmathMatches() {
-  const leagueId = ODDSMATH_LEAGUE_ID;
+async function fetchOddsmathMatches(competition) {
+  const leagueId = competition.oddsmathLeagueId;
   const leagueUrl = `https://www.oddsmath.com/api/v1/events-by-league.json/?language=en&country_code=RS&league_id=${leagueId}`;
 
   const leaguePayload = await fetchJson(leagueUrl);
@@ -1425,7 +1614,7 @@ async function fetchOddsmathMatches() {
   }
 
   const matches = [];
-  const btfoddsData = await fetchBtfOdds();
+  const btfoddsData = await fetchBtfOdds(competition);
   
   const chunkSize = 15;
   for (let i = 0; i < events.length; i += chunkSize) {
@@ -1525,7 +1714,7 @@ async function fetchOddsmathMatches() {
   };
 }
 
-function getOddsmathMatchesForBookmaker(bookmaker, allOddsmathMatches) {
+function getOddsmathMatchesForBookmaker(bookmaker, allOddsmathMatches, competition) {
   return allOddsmathMatches.map((item) => {
     const isBia = bookmaker.id === "betinasia";
     const odds = isBia ? item.biaOdds : item.bfOdds;
@@ -1546,8 +1735,8 @@ function getOddsmathMatchesForBookmaker(bookmaker, allOddsmathMatches) {
       matchCode: null,
       home: item.home,
       away: item.away,
-      leagueName: "World Cup 2026",
-      leagueGroup: String(ODDSMATH_LEAGUE_ID),
+      leagueName: competition.label,
+      leagueGroup: String(competition.oddsmathLeagueId),
       kickOffTime: item.kickOffTime,
       updatedAt: Date.now(),
       odds,
@@ -1558,41 +1747,42 @@ function getOddsmathMatchesForBookmaker(bookmaker, allOddsmathMatches) {
   });
 }
 
-async function getOddsmathFeed(bookmaker) {
+async function getOddsmathFeed(bookmaker, competition) {
+  const entry = getCacheEntry(oddsmathCache, competition.id);
   const now = Date.now();
-  if (oddsmathCache.result && oddsmathCache.expiresAt > now) {
-    const matches = getOddsmathMatchesForBookmaker(bookmaker, oddsmathCache.result.matches);
+  if (entry.result && entry.expiresAt > now) {
+    const matches = getOddsmathMatchesForBookmaker(bookmaker, entry.result.matches, competition);
     return {
       bookmaker,
       status: "ok",
-      url: oddsmathCache.result.url,
+      url: entry.result.url,
       matches,
-      fetchedAt: oddsmathCache.result.fetchedAt,
-      totalMatches: oddsmathCache.result.totalMatches,
+      fetchedAt: entry.result.fetchedAt,
+      totalMatches: entry.result.totalMatches,
       cached: true,
       message: "Using cached Oddsmath feed.",
     };
   }
 
-  if (!oddsmathCache.promise) {
-    oddsmathCache.promise = fetchOddsmathMatches()
+  if (!entry.promise) {
+    entry.promise = fetchOddsmathMatches(competition)
       .then((result) => {
-        oddsmathCache.result = result;
-        oddsmathCache.expiresAt = Date.now() + 60000;
+        entry.result = result;
+        entry.expiresAt = Date.now() + 60000;
         return result;
       })
       .catch((error) => {
-        oddsmathCache.promise = null;
+        entry.promise = null;
         throw error;
       })
       .finally(() => {
-        oddsmathCache.promise = null;
+        entry.promise = null;
       });
   }
 
   try {
-    const result = await oddsmathCache.promise;
-    const matches = getOddsmathMatchesForBookmaker(bookmaker, result.matches);
+    const result = await entry.promise;
+    const matches = getOddsmathMatchesForBookmaker(bookmaker, result.matches, competition);
     return {
       bookmaker,
       status: "ok",
@@ -1612,17 +1802,17 @@ async function getOddsmathFeed(bookmaker) {
   }
 }
 
-async function fetchBookmaker(bookmaker) {
+async function fetchBookmaker(bookmaker, competition) {
   if (bookmaker.type === "pinnacle") {
-    let url = pinnacleLeagueOddsUrl(PINNACLE_LEAGUE_CODE);
+    let url = pinnacleLeagueOddsUrl(competition.pinnacleLeagueCode || PINNACLE_LEAGUE_CODE);
 
     try {
       if (PINNACLE_USE_LEAGUES_LOOKUP) {
         const leaguesUrl = pinnacleLeaguesUrl();
         url = leaguesUrl;
         const leaguesPayload = await fetchPinnacleJson(leaguesUrl);
-        const leagueIds = getPinnacleWorldCupLeagueIds(leaguesPayload);
-        const worldCupLeague = getPinnacleLeagues(leaguesPayload).find((league) =>
+        const leagueIds = getPinnacleCompetitionLeagueIds(leaguesPayload, competition);
+        const matchedLeague = getPinnacleLeagues(leaguesPayload).find((league) =>
           leagueIds.includes(String(league.id)),
         );
 
@@ -1633,15 +1823,15 @@ async function fetchBookmaker(bookmaker) {
             url: leaguesUrl,
             matches: [],
             totalMatches: getPinnacleLeagues(leaguesPayload).length,
-            message: "Pinnacle leagues feed is enabled, but no World Cup league was found.",
+            message: `Pinnacle leagues feed is enabled, but no ${competition.label} league was found.`,
           };
         }
 
-        url = pinnacleLeagueOddsUrl(worldCupLeague?.leagueCode || PINNACLE_LEAGUE_CODE);
+        url = pinnacleLeagueOddsUrl(matchedLeague?.leagueCode || competition.pinnacleLeagueCode || PINNACLE_LEAGUE_CODE);
       }
 
       const oddsPayload = await fetchPinnacleJson(url);
-      const matches = normalizePinnacleMatches(bookmaker, oddsPayload, oddsPayload);
+      const matches = normalizePinnacleMatches(bookmaker, oddsPayload, oddsPayload, competition);
       return {
         bookmaker,
         status: "ok",
@@ -1668,7 +1858,7 @@ async function fetchBookmaker(bookmaker) {
         attempts: bookmaker.id === "maxbet" ? 3 : 2,
         timeoutMs: bookmaker.id === "maxbet" ? Math.max(FEED_TIMEOUT_MS, 15000) : FEED_TIMEOUT_MS,
       });
-      const matches = normalizeDualsoftMatches(bookmaker, payload);
+      const matches = normalizeDualsoftMatches(bookmaker, payload, competition);
       return {
         bookmaker,
         status: "ok",
@@ -1689,10 +1879,10 @@ async function fetchBookmaker(bookmaker) {
   }
 
   if (bookmaker.type === "nsoft") {
-    const url = nsoftWorldCupUrl(bookmaker);
+    const url = nsoftCompetitionUrl(bookmaker, competition);
     try {
       const payload = await fetchJson(url);
-      const matches = normalizeNsoftMatches(bookmaker, payload);
+      const matches = normalizeNsoftMatches(bookmaker, payload, competition);
       return {
         bookmaker,
         status: "ok",
@@ -1713,11 +1903,11 @@ async function fetchBookmaker(bookmaker) {
   }
 
   if (bookmaker.type === "superbet") {
-    const url = superbetWorldCupUrl(bookmaker);
+    const url = superbetCompetitionUrl(bookmaker, competition);
     try {
       const payload = await fetchSseSnapshot(url);
       const events = Array.isArray(payload) ? payload : Array.isArray(payload?.data) ? payload.data : [];
-      const matches = normalizeSuperbetMatches(bookmaker, events);
+      const matches = normalizeSuperbetMatches(bookmaker, events, competition);
       return {
         bookmaker,
         status: "ok",
@@ -1738,11 +1928,11 @@ async function fetchBookmaker(bookmaker) {
   }
 
   if (bookmaker.type === "mozzartbet") {
-    return getMozzartbetFeed(bookmaker);
+    return getMozzartbetFeed(bookmaker, competition);
   }
 
   if (bookmaker.type === "oddsmath") {
-    return getOddsmathFeed(bookmaker);
+    return getOddsmathFeed(bookmaker, competition);
   }
 
 
@@ -2214,14 +2404,16 @@ function buildOpportunities(matches) {
     .slice(0, 8);
 }
 
-export async function getOddsPayload() {
+export async function getOddsPayload(competitionId = DEFAULT_COMPETITION_ID) {
+  const competition = getCompetitionById(competitionId);
   const startedAt = Date.now();
-  const settled = await Promise.all(FEED_BOOKMAKERS.map(fetchBookmaker));
+  const settled = await Promise.all(FEED_BOOKMAKERS.map((bookmaker) => fetchBookmaker(bookmaker, competition)));
   const matches = aggregateMatches(settled);
 
   return {
     generatedAt: Date.now(),
     elapsedMs: Date.now() - startedAt,
+    competitions: COMPETITIONS.map(({ id, label }) => ({ id, label })),
     bookmakers: DISPLAY_BOOKMAKERS.map(({ id, name, type, baseUrl, isReference }) => ({
       id,
       name,
@@ -2245,11 +2437,11 @@ export async function getOddsPayload() {
     opportunities: buildOpportunities(matches),
     filter: {
       sport: "football",
-      competition: "FIFA World Cup 2026",
-      terms: WORLD_CUP_TERMS,
+      competition: competition.label,
+      terms: competition.terms || [],
       note:
         matches.length === 0
-          ? "No World Cup-labelled matches were returned by the enabled feeds yet."
+          ? `No ${competition.label}-labelled matches were returned by the enabled feeds yet.`
           : null,
     },
   };
@@ -2260,7 +2452,9 @@ export function getHealthPayload() {
 }
 
 async function handleOdds(req, res) {
-  sendJson(res, 200, await getOddsPayload());
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const competitionId = url.searchParams.get("competition") || undefined;
+  sendJson(res, 200, await getOddsPayload(competitionId));
 }
 
 async function handleStatic(req, res) {

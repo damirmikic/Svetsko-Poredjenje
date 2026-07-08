@@ -7,7 +7,8 @@ export async function handler(event) {
   }
 
   try {
-    return json(200, await getOddsPayload());
+    const competitionId = event.queryStringParameters?.competition;
+    return json(200, await getOddsPayload(competitionId));
   } catch (error) {
     return json(500, {
       error: error.message,

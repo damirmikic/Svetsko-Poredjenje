@@ -14,7 +14,15 @@ const primaryReferenceBookmaker = "pinnacle_shin";
 const fallbackReferenceBookmaker = "pinnacle";
 const pinnacleBrowserBase = "https://www.pinnacle888.com/sports-service/sv/euro";
 const pinnacleBrowserSportId = 29;
-const pinnacleBrowserLeagueCode = "fifa-world-cup";
+const defaultCompetitionId = "world-cup";
+const pinnacleLeagueCodeByCompetition = {
+  "world-cup": "fifa-world-cup",
+  epl: "england-premier-league",
+  bundesliga: "germany-bundesliga",
+  "ligue-1": "france-ligue-1",
+  "serie-a": "italy-serie-a",
+  laliga: "spain-la-liga",
+};
 const matchWinnerOutcomes = ["home", "draw", "away"];
 const totalGoalsOutcomes = ["over25", "under25"];
 const todayOutcomes = [...matchWinnerOutcomes, "over25", "under25"];
@@ -32,6 +40,7 @@ const state = {
   data: null,
   enabledBookmakers: new Set(bookmakerOrder),
   search: "",
+  competitionId: localStorage.getItem("competitionId") || defaultCompetitionId,
   view: "all",
   noVigLimitPercent: 1,
   oddsThresholdPercent: 3,
@@ -51,6 +60,7 @@ const els = {
   refreshButton: document.querySelector("#refreshButton"),
   refreshCountdown: document.querySelector("#refreshCountdown"),
   viewButtons: document.querySelectorAll(".segmented button[data-view]"),
+  competitionTabs: document.querySelector("#competitionTabs"),
   bookmakerToggles: document.querySelector("#bookmakerToggles"),
   searchInput: document.querySelector("#searchInput"),
   noVigLimitInput: document.querySelector("#noVigLimitInput"),
@@ -440,7 +450,7 @@ async function loadOdds() {
   setLoading(true);
   try {
     const previousSnapshot = state.oddsSnapshot;
-    const response = await fetch("/api/odds", { cache: "no-store" });
+    const response = await fetch(`/api/odds?competition=${encodeURIComponent(state.competitionId)}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     state.data = await response.json();
     try {
@@ -473,6 +483,30 @@ function refreshOddsOnTimer() {
   nextRefreshAt = Date.now() + oddsRefreshMs;
   renderRefreshCountdown();
   loadOdds();
+}
+
+function renderCompetitionTabs() {
+  const competitions = state.data?.competitions || [{ id: defaultCompetitionId, label: "World Cup 2026" }];
+  els.competitionTabs.innerHTML = competitions
+    .map(
+      (competition) => `
+        <button type="button" class="${competition.id === state.competitionId ? "active" : ""}" data-competition="${competition.id}">${competition.label}</button>
+      `,
+    )
+    .join("");
+
+  els.competitionTabs.querySelectorAll("button").forEach((button) => {
+    button.addEventListener("click", () => {
+      const competitionId = button.dataset.competition;
+      if (competitionId === state.competitionId) return;
+      state.competitionId = competitionId;
+      localStorage.setItem("competitionId", competitionId);
+      state.oddsSnapshot = new Map();
+      state.changedOddsUntil = new Map();
+      state.changedOddsDirection = new Map();
+      loadOdds();
+    });
+  });
 }
 
 function renderBookmakerToggles() {
@@ -516,10 +550,11 @@ function renderView() {
     button.classList.toggle("active", button.dataset.view === state.view);
   });
 
+  const competitionLabel = state.data?.filter?.competition || "World Cup 2026";
   const titles = {
-    all: "World Cup 2026 - 1X2 kvote",
+    all: `${competitionLabel} - 1X2 kvote`,
     today: "Danasnji mecevi - 1X2 i golovi 2.5",
-    goals: "World Cup 2026 - Golovi 2.5",
+    goals: `${competitionLabel} - Golovi 2.5`,
     accumulator: "Množenje kvota na favorite za naredne mečeve",
   };
   els.tableTitle.textContent = titles[state.view] || titles.all;
@@ -984,7 +1019,7 @@ async function hydratePinnacleFromBrowser() {
     timeStamp: String(Date.now()),
     periodNum: "-1",
     eSportCode: "",
-    leagueCode: pinnacleBrowserLeagueCode,
+    leagueCode: pinnacleLeagueCodeByCompetition[state.competitionId] || pinnacleLeagueCodeByCompetition[defaultCompetitionId],
     isHlE: "true",
     isLive: "false",
     eventType: "0",
@@ -1716,6 +1751,7 @@ function renderAccumulatorView(matches) {
 }
 
 function render() {
+  renderCompetitionTabs();
   renderBookmakerToggles();
   const matches = visibleMatches();
   renderView();
