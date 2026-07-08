@@ -2477,16 +2477,61 @@ function buildOpportunities(matches) {
     .slice(0, 8);
 }
 
-export async function getOddsPayload(competitionId = DEFAULT_COMPETITION_ID) {
-  const competition = getCompetitionById(competitionId);
+const COMPETITION_AVAILABILITY_TTL_MS = 10 * 60 * 1000;
+const competitionAvailabilityCache = new Map();
+
+async function checkCompetitionHasOffers(competition) {
+  try {
+    const url = pinnacleLeagueOddsUrl(competition.pinnacleLeagueCode || PINNACLE_LEAGUE_CODE);
+    const payload = await fetchPinnacleJson(url);
+    return getPinnacleEvents(payload).length > 0;
+  } catch {
+    return true; // treat lookup failures as "unknown" and keep the tab visible
+  }
+}
+
+async function refreshStaleCompetitionAvailability(excludeId) {
+  const now = Date.now();
+  const stale = COMPETITIONS.filter((competition) => {
+    if (competition.id === excludeId) return false;
+    const entry = competitionAvailabilityCache.get(competition.id);
+    return !entry || now - entry.checkedAt > COMPETITION_AVAILABILITY_TTL_MS;
+  });
+
+  await Promise.all(
+    stale.map(async (competition) => {
+      const hasOffers = await checkCompetitionHasOffers(competition);
+      competitionAvailabilityCache.set(competition.id, { hasOffers, checkedAt: Date.now() });
+    }),
+  );
+}
+
+function resolveDefaultCompetitionId() {
+  for (const competition of COMPETITIONS) {
+    const entry = competitionAvailabilityCache.get(competition.id);
+    if (!entry || entry.hasOffers !== false) return competition.id;
+  }
+  return DEFAULT_COMPETITION_ID;
+}
+
+export async function getOddsPayload(competitionId) {
+  const competition = getCompetitionById(competitionId || resolveDefaultCompetitionId());
   const startedAt = Date.now();
   const settled = await Promise.all(FEED_BOOKMAKERS.map((bookmaker) => fetchBookmaker(bookmaker, competition)));
   const matches = aggregateMatches(settled);
 
+  competitionAvailabilityCache.set(competition.id, { hasOffers: matches.length > 0, checkedAt: Date.now() });
+  await refreshStaleCompetitionAvailability(competition.id);
+
   return {
     generatedAt: Date.now(),
     elapsedMs: Date.now() - startedAt,
-    competitions: COMPETITIONS.map(({ id, label }) => ({ id, label })),
+    activeCompetitionId: competition.id,
+    competitions: COMPETITIONS.map(({ id, label }) => ({
+      id,
+      label,
+      hasOffers: competitionAvailabilityCache.get(id)?.hasOffers ?? true,
+    })),
     bookmakers: DISPLAY_BOOKMAKERS.map(({ id, name, type, baseUrl, isReference }) => ({
       id,
       name,
@@ -2580,6 +2625,6 @@ if (process.argv[1] && normalize(process.argv[1]) === normalize(join(projectDir,
   });
 
   server.listen(PORT, () => {
-    console.log(`SP Kvote running on http://localhost:${PORT}`);
+    console.log(`Fudbal Kvote running on http://localhost:${PORT}`);
   });
 }

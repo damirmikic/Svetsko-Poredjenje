@@ -43,7 +43,7 @@ const state = {
   data: null,
   enabledBookmakers: new Set(bookmakerOrder),
   search: "",
-  competitionId: localStorage.getItem("competitionId") || defaultCompetitionId,
+  competitionId: null,
   view: "all",
   noVigLimitPercent: 1,
   oddsThresholdPercent: 3,
@@ -453,9 +453,11 @@ async function loadOdds() {
   setLoading(true);
   try {
     const previousSnapshot = state.oddsSnapshot;
-    const response = await fetch(`/api/odds?competition=${encodeURIComponent(state.competitionId)}`, { cache: "no-store" });
+    const query = state.competitionId ? `?competition=${encodeURIComponent(state.competitionId)}` : "";
+    const response = await fetch(`/api/odds${query}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     state.data = await response.json();
+    if (!state.competitionId) state.competitionId = state.data.activeCompetitionId;
     try {
       await hydratePinnacleFromBrowser();
     } catch (error) {
@@ -489,7 +491,15 @@ function refreshOddsOnTimer() {
 }
 
 function renderCompetitionTabs() {
-  const competitions = state.data?.competitions || [{ id: defaultCompetitionId, label: "World Cup 2026" }];
+  const allCompetitions = state.data?.competitions || [{ id: defaultCompetitionId, label: "World Cup 2026", hasOffers: true }];
+  const competitions = allCompetitions.filter((competition) => competition.hasOffers !== false);
+
+  if (state.data && state.competitionId && !competitions.some((competition) => competition.id === state.competitionId)) {
+    state.competitionId = null;
+    setTimeout(loadOdds, 0);
+    return;
+  }
+
   els.competitionTabs.innerHTML = competitions
     .map(
       (competition) => `
@@ -503,7 +513,6 @@ function renderCompetitionTabs() {
       const competitionId = button.dataset.competition;
       if (competitionId === state.competitionId) return;
       state.competitionId = competitionId;
-      localStorage.setItem("competitionId", competitionId);
       state.oddsSnapshot = new Map();
       state.changedOddsUntil = new Map();
       state.changedOddsDirection = new Map();
