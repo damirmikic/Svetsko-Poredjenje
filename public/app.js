@@ -1,3 +1,5 @@
+import { createMatchKey, toTimestamp } from "./shared/teams.js";
+
 const bookmakerOrder = [
   "pinnacle_shin",
   "pinnacle",
@@ -87,6 +89,9 @@ const els = {
   accumulatorTypeSelect: document.querySelector("#accumulatorTypeSelect"),
   accumulatorView: document.querySelector("#accumulatorView"),
   oddsTableWrap: document.querySelector("#oddsTableWrap"),
+  unmatchedPanel: document.querySelector("#unmatchedPanel"),
+  unmatchedCount: document.querySelector("#unmatchedCount"),
+  unmatchedList: document.querySelector("#unmatchedList"),
 };
 
 function formatOdd(value) {
@@ -617,52 +622,6 @@ function isValidOdd(value) {
   return Number.isFinite(numeric) && numeric > 1;
 }
 
-function normalizeTeamName(value) {
-  const clean = String(value || "").replace(/\s+/g, " ").trim();
-  const canonical = clean
-    .toLocaleLowerCase("sr-RS")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/&/g, "and")
-    .replace(/\./g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const aliases = new Map([
-    ["bih", "Bosnia and Herzegovina"],
-    ["bosnia and herzegovina", "Bosnia and Herzegovina"],
-    ["bosnia-herzegovina", "Bosnia and Herzegovina"],
-    ["bosna i hercegovina", "Bosnia and Herzegovina"],
-    ["usa", "United States"],
-    ["u s a", "United States"],
-    ["united states of america", "United States"],
-    ["korea republic", "South Korea"],
-    ["czechia", "Czech Republic"],
-    ["czech rep", "Czech Republic"],
-    ["turkiye", "Turkey"],
-    ["congo dr", "D.R. Congo"],
-    ["d r congo", "D.R. Congo"],
-    ["dr congo", "D.R. Congo"],
-    ["drc", "D.R. Congo"],
-    ["ivory coast", "Ivory Coast"],
-    ["cote divoire", "Ivory Coast"],
-  ]);
-  return aliases.get(canonical) || clean;
-}
-
-function simplifyTeam(value) {
-  return normalizeTeamName(value)
-    .toLocaleLowerCase("sr-RS")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function createMatchKey(home, away, kickOffTime) {
-  const timestamp = Number(kickOffTime);
-  const day = Number.isFinite(timestamp) ? new Date(timestamp).toISOString().slice(0, 10) : "unknown";
-  return `${day}:${simplifyTeam(home)}:${simplifyTeam(away)}`;
-}
 
 function normalizePrice(value) {
   const numeric = Number(value);
@@ -1042,7 +1001,9 @@ function getPinnacleQualifyOdds(event) {
 
 function normalizePinnacleOffer(event) {
   const [home, away] = getPinnacleTeamNames(event);
-  const kickOffTime = Number(getPinnacleKickoff(event));
+  // Not Number(): Pinnacle returns ISO strings on some endpoints, and coercing
+  // those to NaN used to bucket the key under "unknown" so it matched no row.
+  const kickOffTime = toTimestamp(getPinnacleKickoff(event));
   const moneyline = getPinnacleMoneyline(event);
   const totalsByLine = getPinnacleTotalsByLine(event);
   return {
@@ -1829,6 +1790,28 @@ function renderAccumulatorView(matches) {
   });
 }
 
+function renderUnmatched() {
+  const unmatched = state.data?.unmatched || [];
+  els.unmatchedPanel.classList.toggle("hidden", unmatched.length === 0);
+  if (!unmatched.length) return;
+
+  els.unmatchedCount.textContent = `(${unmatched.length})`;
+  els.unmatchedList.innerHTML = unmatched
+    .map((item) => {
+      const closest = item.closest
+        ? `najblize: ${escapeHtml(item.closest)} (${item.score ?? "-"})`
+        : "nema kandidata";
+      return `
+        <div class="unmatched-item">
+          <span class="unmatched-book">${escapeHtml(item.bookmakerName || item.bookmakerId)}</span>
+          <span class="unmatched-teams">${escapeHtml(item.home)} - ${escapeHtml(item.away)}</span>
+          <span class="unmatched-reason">${escapeHtml(item.reason)} · ${closest}</span>
+        </div>
+      `;
+    })
+    .join("");
+}
+
 function render() {
   renderCompetitionTabs();
   renderBookmakerToggles();
@@ -1846,6 +1829,7 @@ function render() {
   
   renderSummary(matches);
   updateValueTicker(matches);
+  renderUnmatched();
 }
 
 els.refreshButton.addEventListener("click", loadOdds);

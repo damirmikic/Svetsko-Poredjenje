@@ -3,6 +3,13 @@ import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 
+import {
+  createMatchKey,
+  findFixtureMatch,
+  normalizeTeamName,
+  toTimestamp,
+} from "./public/shared/teams.js";
+
 const projectDir = process.cwd();
 const publicDir = join(projectDir, "public");
 
@@ -1051,191 +1058,12 @@ function normalizePinnacleMatches(bookmaker, eventsPayload, leaguesPayload, comp
     });
 }
 
-function normalizeTeamName(value) {
-  const clean = String(value || "")
-    .replace(/\s+/g, " ")
-    .trim();
-  const canonical = clean
-    .toLocaleLowerCase("sr-RS")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/&/g, "and")
-    .replace(/\./g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  const aliases = new Map([
-    ["bih", "Bosnia and Herzegovina"],
-    ["bosnia and herzegovina", "Bosnia and Herzegovina"],
-    ["bosnia-herzegovina", "Bosnia and Herzegovina"],
-    ["bosnia and herz", "Bosnia and Herzegovina"],
-    ["bosna i hercegovina", "Bosnia and Herzegovina"],
-    ["czech rep", "Czech Republic"],
-    ["czechia", "Czech Republic"],
-    ["ceska", "Czech Republic"],
-    ["ceska r", "Czech Republic"],
-    ["congo dr", "D.R. Congo"],
-    ["congo d r", "D.R. Congo"],
-    ["d r congo", "D.R. Congo"],
-    ["dr congo", "D.R. Congo"],
-    ["democratic republic of congo", "D.R. Congo"],
-    ["dem republic of congo", "D.R. Congo"],
-    ["dem rep of congo", "D.R. Congo"],
-    ["dem rep congo", "D.R. Congo"],
-    ["drc", "D.R. Congo"],
-    ["d r c", "D.R. Congo"],
-    ["rd congo", "D.R. Congo"],
-    ["dr kongo", "D.R. Congo"],
-    ["demokratska republika kongo", "D.R. Congo"],
-    ["demokratska rep kongo", "D.R. Congo"],
-    ["kongo dr", "D.R. Congo"],
-    ["ir iran", "Iran"],
-    ["korea republic", "South Korea"],
-    ["juzna koreja", "South Korea"],
-    ["s korea", "South Korea"],
-    ["skorea", "South Korea"],
-    ["turkiye", "Turkey"],
-    ["turska", "Turkey"],
-    ["usa", "United States"],
-    ["u s a", "United States"],
-    ["sad", "United States"],
-    ["alzir", "Algeria"],
-    ["argentina", "Argentina"],
-    ["australija", "Australia"],
-    ["austrija", "Austria"],
-    ["belgija", "Belgium"],
-    ["brazil", "Brazil"],
-    ["engleska", "England"],
-    ["egipat", "Egypt"],
-    ["ekvador", "Ecuador"],
-    ["francuska", "France"],
-    ["gana", "Ghana"],
-    ["haiti", "Haiti"],
-    ["holandija", "Netherlands"],
-    ["hrvatska", "Croatia"],
-    ["iran", "Iran"],
-    ["irak", "Iraq"],
-    ["japan", "Japan"],
-    ["jordan", "Jordan"],
-    ["kanada", "Canada"],
-    ["katar", "Qatar"],
-    ["kolumbija", "Colombia"],
-    ["kurasao", "Curacao"],
-    ["maroko", "Morocco"],
-    ["meksiko", "Mexico"],
-    ["nemacka", "Germany"],
-    ["novi zeland", "New Zealand"],
-    ["n zealand", "New Zealand"],
-    ["nzealand", "New Zealand"],
-    ["norveska", "Norway"],
-    ["obala slonovace", "Ivory Coast"],
-    ["panama", "Panama"],
-    ["paragvaj", "Paraguay"],
-    ["portugal", "Portugal"],
-    ["saudijska arabija", "Saudi Arabia"],
-    ["senegal", "Senegal"],
-    ["skotska", "Scotland"],
-    ["spanija", "Spain"],
-    ["svedska", "Sweden"],
-    ["svajcarska", "Switzerland"],
-    ["tunis", "Tunisia"],
-    ["urugvaj", "Uruguay"],
-    ["uzbekistan", "Uzbekistan"],
-    ["zelenortska ostrva", "Cape Verde"],
-    ["juzna afrika", "South Africa"],
-    ["s africa", "South Africa"],
-    ["safrica", "South Africa"],
-    ["b and h", "Bosnia and Herzegovina"],
-    ["bandh", "Bosnia and Herzegovina"],
-    ["czech r", "Czech Republic"],
-
-    // England - Premier League
-    ["coventry", "Coventry City"],
-    ["hull", "Hull City"],
-    ["manchester utd", "Manchester United"],
-    ["nottingham", "Nottingham Forest"],
-    ["leeds", "Leeds United"],
-    ["tottenham", "Tottenham Hotspur"],
-    ["brighton", "Brighton and Hove Albion"],
-    ["brighton and hove albion", "Brighton and Hove Albion"],
-    ["ipswich", "Ipswich Town"],
-    ["newcastle", "Newcastle United"],
-    ["bournemouth afc", "Bournemouth"],
-
-    // Germany - Bundesliga
-    ["bayern", "Bayern Munich"],
-    ["bayern munchen", "Bayern Munich"],
-    ["vfb stuttgart", "Stuttgart"],
-    ["schalke", "Schalke 04"],
-    ["m'gladbach", "Borussia Monchengladbach"],
-    ["mainz", "Mainz 05"],
-    ["fsv mainz 05", "Mainz 05"],
-    ["frankfurt", "Eintracht Frankfurt"],
-    ["sc freiburg", "Freiburg"],
-    ["werder", "Werder Bremen"],
-    ["koln", "FC Koln"],
-    ["tsg hoffenheim", "Hoffenheim"],
-    ["sv elversberg", "Elversberg"],
-    ["leverkusen", "Bayer Leverkusen"],
-    ["dortmund", "Borussia Dortmund"],
-    ["hamburger", "Hamburger SV"],
-
-    // France - Ligue 1
-    ["olympique marseille", "Marseille"],
-    ["olympique lyon", "Lyon"],
-    ["as monaco", "Monaco"],
-    ["psg", "Paris Saint-Germain"],
-    ["paris saint germain", "Paris Saint-Germain"],
-
-    // Italy - Serie A
-    ["torino fc", "Torino"],
-    ["milan", "AC Milan"],
-    ["as roma", "Roma"],
-    ["inter", "Internazionale"],
-    ["inter milano", "Internazionale"],
-    ["inter milan", "Internazionale"],
-    ["monza brianza", "Monza"],
-
-    // Spain - LaLiga
-    ["rcd espanyol", "Espanyol"],
-    ["betis", "Real Betis"],
-    ["ath bilbao", "Athletic Bilbao"],
-    ["celta", "Celta Vigo"],
-    ["atl madrid", "Atletico Madrid"],
-    ["la coruna", "Deportivo La Coruna"],
-  ]);
-
-  return aliases.get(canonical) || clean;
-}
-
 function normalizeCompetitionName(value) {
   const clean = String(value || "World Cup 2026").replace(/\s+/g, " ").trim();
   if (textIncludesWorldCup(clean)) return "World Cup 2026";
   return clean;
 }
 
-function simplifyTeam(value) {
-  return normalizeTeamName(value)
-    .toLocaleLowerCase("sr-RS")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function toTimestamp(value) {
-  if (!value) return null;
-  const numeric = Number(value);
-  if (Number.isFinite(numeric)) return numeric;
-  const parsed = new Date(value).getTime();
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function createMatchKey(home, away, kickOffTime) {
-  const timestamp = toTimestamp(kickOffTime);
-  const day = timestamp ? new Date(timestamp).toISOString().slice(0, 10) : "unknown";
-  return `${day}:${simplifyTeam(home)}:${simplifyTeam(away)}`;
-}
 
 async function fetchJson(url, timeoutMs = FEED_TIMEOUT_MS) {
   const controller = new AbortController();
@@ -2087,30 +1915,55 @@ function attachOffer(row, offer) {
   };
 }
 
-function findTruthRow(byMatch, offer) {
+function findTruthRow(byMatch, offer, report) {
   const exact = byMatch.get(offer.matchKey);
-  if (exact) return exact;
+  if (exact) return { row: exact, reversed: false };
 
-  const offerHome = simplifyTeam(offer.home);
-  const offerAway = simplifyTeam(offer.away);
-  const offerTime = Number(offer.kickOffTime || 0);
+  // Exact keys only agree when every feed spells both teams identically, which
+  // they do not. Fall back to scoring the fixture against every open row.
+  const result = findFixtureMatch(offer, byMatch.values());
+  if (result?.row) return { row: result.row, reversed: result.reversed };
 
-  for (const row of byMatch.values()) {
-    const rowHome = simplifyTeam(row.home);
-    const rowAway = simplifyTeam(row.away);
-    const sameTeams =
-      (rowHome === offerHome && rowAway === offerAway) ||
-      (rowHome === offerAway && rowAway === offerHome);
-    if (!sameTeams) continue;
-
-    const rowTime = Number(row.kickOffTime || 0);
-    // Use an 8-day threshold (8 * 24 * 60 * 60 * 1000) to consolidate matches with feed date discrepancies
-    if (!rowTime || !offerTime || Math.abs(rowTime - offerTime) <= 8 * 24 * 60 * 60 * 1000) {
-      return row;
-    }
-  }
-
+  report?.(offer, result);
   return null;
+}
+
+/** Swap home/away prices when a feed lists a fixture the other way round. */
+function orientOffer(offer, reversed) {
+  if (!reversed) return offer;
+  return {
+    ...offer,
+    odds: offer.odds
+      ? { home: offer.odds.away, draw: offer.odds.draw, away: offer.odds.home }
+      : { home: null, draw: null, away: null },
+    qualifyOdds: offer.qualifyOdds
+      ? { home: offer.qualifyOdds.away, away: offer.qualifyOdds.home }
+      : { home: null, away: null },
+  };
+}
+
+const UNMATCHED_REPORT_LIMIT = 40;
+
+/**
+ * Records offers the matcher could not place, with the closest row it saw.
+ * Without this an unrecognised spelling just disappears from the table, which
+ * makes missing normalization rules effectively undiscoverable.
+ */
+function createUnmatchedReporter(unmatched) {
+  return (result) => (offer, attempt) => {
+    if (unmatched.length >= UNMATCHED_REPORT_LIMIT) return;
+    const candidate = attempt?.runnerUp?.row;
+    unmatched.push({
+      bookmakerId: result.bookmaker.id,
+      bookmakerName: result.bookmaker.name,
+      home: offer.home,
+      away: offer.away,
+      kickOffTime: offer.kickOffTime,
+      reason: attempt?.reason || "no-candidates",
+      score: Number.isFinite(attempt?.score) ? Number(attempt.score.toFixed(3)) : null,
+      closest: candidate ? `${candidate.home} - ${candidate.away}` : null,
+    });
+  };
 }
 
 function compareOdds(a, b) {
@@ -2271,7 +2124,7 @@ function isOutright(home, away) {
   return false;
 }
 
-function aggregateMatches(results) {
+export function aggregateMatches(results) {
   // Filter out outrights/specials before aggregation
   for (const result of results) {
     if (result.matches) {
@@ -2280,6 +2133,8 @@ function aggregateMatches(results) {
   }
 
   const byMatch = new Map();
+  const unmatched = [];
+  const report = createUnmatchedReporter(unmatched);
   const truthResult = results.find((result) => result.bookmaker.sourceOfTruth && result.status === "ok" && result.matches.length);
 
   if (truthResult) {
@@ -2298,53 +2153,19 @@ function aggregateMatches(results) {
       if (result === truthResult) continue;
       result.matchedMatches = 0;
       for (const offer of result.matches) {
-        const row = findTruthRow(byMatch, offer);
-        if (!row) continue;
+        const found = findTruthRow(byMatch, offer, report(result));
+        if (!found) continue;
 
-        const isReversed = simplifyTeam(row.home) === simplifyTeam(offer.away);
-        if (isReversed) {
-          const adjustedOffer = {
-            ...offer,
-            odds: offer.odds ? {
-              home: offer.odds.away,
-              draw: offer.odds.draw,
-              away: offer.odds.home,
-            } : { home: null, draw: null, away: null },
-            qualifyOdds: offer.qualifyOdds ? {
-              home: offer.qualifyOdds.away,
-              away: offer.qualifyOdds.home,
-            } : { home: null, away: null },
-          };
-          attachOffer(row, adjustedOffer);
-        } else {
-          attachOffer(row, offer);
-        }
+        attachOffer(found.row, orientOffer(offer, found.reversed));
         result.matchedMatches += 1;
       }
     }
   } else {
     for (const result of results) {
       for (const offer of result.matches) {
-        const row = findTruthRow(byMatch, offer);
-        if (row) {
-          const isReversed = simplifyTeam(row.home) === simplifyTeam(offer.away);
-          if (isReversed) {
-            const adjustedOffer = {
-              ...offer,
-              odds: offer.odds ? {
-                home: offer.odds.away,
-                draw: offer.odds.draw,
-                away: offer.odds.home,
-              } : { home: null, draw: null, away: null },
-              qualifyOdds: offer.qualifyOdds ? {
-                home: offer.qualifyOdds.away,
-                away: offer.qualifyOdds.home,
-              } : { home: null, away: null },
-            };
-            attachOffer(row, adjustedOffer);
-          } else {
-            attachOffer(row, offer);
-          }
+        const found = findTruthRow(byMatch, offer, report(result));
+        if (found) {
+          attachOffer(found.row, orientOffer(offer, found.reversed));
         } else {
           const newRow = makeMatchRow(offer);
           attachOffer(newRow, offer);
@@ -2355,7 +2176,7 @@ function aggregateMatches(results) {
   }
 
   const cutOffTime = Date.now();
-  return Array.from(byMatch.values())
+  const matches = Array.from(byMatch.values())
     .filter((match) => {
       if (!match.kickOffTime) return true;
       return Number(match.kickOffTime) >= cutOffTime;
@@ -2372,6 +2193,8 @@ function aggregateMatches(results) {
       };
     })
     .sort((a, b) => Number(a.kickOffTime || 0) - Number(b.kickOffTime || 0));
+
+  return { matches, unmatched };
 }
 
 function getBestOdds(bookmakers) {
@@ -2518,7 +2341,7 @@ export async function getOddsPayload(competitionId) {
   const competition = getCompetitionById(competitionId || resolveDefaultCompetitionId());
   const startedAt = Date.now();
   const settled = await Promise.all(FEED_BOOKMAKERS.map((bookmaker) => fetchBookmaker(bookmaker, competition)));
-  const matches = aggregateMatches(settled);
+  const { matches, unmatched } = aggregateMatches(settled);
 
   competitionAvailabilityCache.set(competition.id, { hasOffers: matches.length > 0, checkedAt: Date.now() });
   await refreshStaleCompetitionAvailability(competition.id);
@@ -2552,6 +2375,9 @@ export async function getOddsPayload(competitionId) {
       message: result.message || null,
     })),
     matches,
+    // Offers whose team names could not be reconciled with any row. Surfaced so
+    // a missing alias shows up as a reported name rather than a blank cell.
+    unmatched,
     opportunities: buildOpportunities(matches),
     filter: {
       sport: "football",

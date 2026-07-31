@@ -91,15 +91,44 @@ Aktivni normalizatori:
 - Superbet
 - BalkanBet
 
+## Normalizacija imena timova
+
+Kladionice salju razlicite oblike istog imena (`Man Utd`, `Manchester Utd`, `Manchester United FC`).
+Spajanje ponuda radi `public/shared/teams.js`, koji koristi i server i browser, u cetiri sloja:
+
+1. `canonicalizeTeam` - mala slova, skidanje dijakritika i interpunkcije.
+2. `ALIAS_ENTRIES` - rucna tabela za imena koja se ne mogu izvesti algoritmom
+   (egzonimi tipa `holandija` -> Netherlands).
+3. `teamTokens` - skidanje klupskih prefiksa (`FC`, `AFC`, `VfB`, godine tipa `04`)
+   i sirenje skracenica (`utd` -> `united`). Ovaj sloj pokriva vecinu varijanti.
+4. `teamSimilarity` - fuzzy poredjenje za ostatak.
+
+Utakmica se spaja tek kada **oba** tima predju prag (`0.72`), i odbija se kada su dva
+kandidata preblizu (`margin 0.08`). Spajanje pogresnih meceva bi prikazalo tudje kvote
+u istom redu, sto je gore nego da reda nema.
+
+Kada oba imena postoje u `ALIAS_ENTRIES` a razlicita su, tretiraju se kao razliciti timovi.
+To je jedini nacin da se razdvoje `Guinea` / `Guinea-Bissau` od `Nottingham` / `Nottingham Forest` -
+strukturno su isti slucaj, pa rucna tabela mora da presudi.
+
+Ponude koje se ne uparе vracaju se u `unmatched` polju `/api/odds` i prikazuju se
+ispod tabele, da bi imena koja nedostaju bila vidljiva umesto da tiho nestanu.
+
+```bash
+npm test
+```
+
 ## Struktura
 
 ```text
-server.js          Node HTTP server, proxy/fetch i normalizacija kvota
-netlify.toml       Netlify build, functions i API rewrite konfiguracija
-netlify/functions  Serverless API entrypoint za Netlify
-public/index.html  App shell
-public/app.js      Dashboard logika i renderovanje
-public/styles.css  UI stilovi
+server.js               Node HTTP server, proxy/fetch i normalizacija kvota
+netlify.toml            Netlify build, functions i API rewrite konfiguracija
+netlify/functions       Serverless API entrypoint za Netlify
+public/index.html       App shell
+public/app.js           Dashboard logika i renderovanje
+public/shared/teams.js  Normalizacija imena i uparivanje meceva (server + browser)
+public/styles.css       UI stilovi
+test/                   node:test testovi
 ```
 
 ## Sledeci koraci

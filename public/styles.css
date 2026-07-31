@@ -1522,3 +1522,44 @@ select,
 #accumulatorFilterSection .select-label {
   margin-top: 14px;
 }
+
+.unmatched-panel {
+  margin-top: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--border, #2a2f3a);
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.unmatched-panel > summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.unmatched-hint {
+  margin: 8px 0 12px;
+  opacity: 0.7;
+}
+
+.unmatched-item {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr) minmax(0, 1.2fr);
+  gap: 12px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border, #2a2f3a);
+}
+
+.unmatched-book {
+  font-weight: 600;
+}
+
+.unmatched-reason {
+  opacity: 0.7;
+}
+
+@media (max-width: 720px) {
+  .unmatched-item {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
