@@ -737,7 +737,7 @@ function normalizeDualsoftMatches(bookmaker, payload, competition) {
     matchCode: match.matchCode,
     home: normalizeTeamName(match.home),
     away: normalizeTeamName(match.away),
-    leagueName: normalizeCompetitionName(match.leagueName),
+    leagueName: normalizeCompetitionName(match.leagueName) || competition.label,
     leagueGroup: match.leagueGroupToken || "",
     kickOffTime: Number(match.kickOffTime) || null,
     updatedAt: Number(match.tmstmp) || Date.now(),
@@ -1043,7 +1043,7 @@ function normalizePinnacleMatches(bookmaker, eventsPayload, leaguesPayload, comp
         matchCode: event.rotationNumber || event.rotNum || null,
         home: normalizeTeamName(home),
         away: normalizeTeamName(away),
-        leagueName: normalizeCompetitionName(leagueName),
+        leagueName: normalizeCompetitionName(leagueName) || competition.label,
         leagueGroup: String(event.leagueId || event.league?.id || ""),
         kickOffTime: toTimestamp(kickOffTime),
         updatedAt: Date.now(),
@@ -1058,8 +1058,15 @@ function normalizePinnacleMatches(bookmaker, eventsPayload, leaguesPayload, comp
     });
 }
 
-function normalizeCompetitionName(value) {
-  const clean = String(value || "World Cup 2026").replace(/\s+/g, " ").trim();
+// Returns "" for empty input so every call site's `|| competition.label`
+// fallback actually runs. A hardcoded "World Cup 2026" default here used to
+// make that fallback dead code everywhere, including at the two call sites
+// that already had it: any competition (Ligue 1 included) whose feed sent an
+// empty leagueName for a fixture got mislabeled "World Cup 2026" regardless
+// of which tab it came from.
+export function normalizeCompetitionName(value) {
+  const clean = String(value || "").replace(/\s+/g, " ").trim();
+  if (!clean) return "";
   if (textIncludesWorldCup(clean)) return "World Cup 2026";
   return clean;
 }

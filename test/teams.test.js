@@ -24,6 +24,20 @@ test("collapses club-type affixes that feeds disagree about", () => {
   sameTeam("Torino FC", "Torino");
 });
 
+test("resolves French club demonyms that share no token with the city name", () => {
+  // Regression: these scored 0.067-0.107 against a 0.72 threshold before the
+  // rennais/brestois/lyonnais token synonyms were added - a bare fuzzy score
+  // never finds them because the adjectival form shares no substring with the
+  // city name at all. Similarity, not sameTeam(): "Stade Rennais" legitimately
+  // keeps an extra "stade" token that plain "Rennes" doesn't have, so the two
+  // token sets are never identical - what matters is that they still clear
+  // the accept threshold via containment.
+  assert.ok(teamSimilarity("Stade Rennais", "Rennes") >= 0.72);
+  assert.ok(teamSimilarity("Stade Rennais FC", "Rennes") >= 0.72);
+  assert.ok(teamSimilarity("Stade Brestois", "Brest") >= 0.72);
+  assert.ok(teamSimilarity("Olympique Lyonnais", "Lyon") >= 0.72);
+});
+
 test("expands the abbreviations feeds use", () => {
   sameTeam("Man Utd", "Manchester United");
   sameTeam("Manchester Utd", "Manchester United");

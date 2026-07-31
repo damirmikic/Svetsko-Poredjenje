@@ -1,0 +1,148 @@
+// Curated team-name aliases.
+//
+// This is the file to edit when a name shows up in the "Neuparene utakmice"
+// panel under the odds table: add one line here rather than touching the
+// matching logic in teams.js.
+//
+// Format: [ "however a feed spells it", "Canonical display name" ]
+// The key is run through canonicalizeTeam() at load (case, diacritics and
+// punctuation are stripped), so write keys in whatever casing is readable -
+// "Bosna i Hercegovina" and "bosna i hercegovina" resolve identically.
+//
+// Two entries whose DISPLAY names differ are treated as different teams even
+// if they share tokens - this is the only way to keep "Guinea" apart from
+// "Guinea-Bissau", or "Nottingham" apart from "Nottingham Forest" (both are a
+// one-token name inside a two-token name, so string scoring alone can't tell
+// them apart). When two real teams could be confused this way, list BOTH
+// sides explicitly - see the national-team and same-city club sections below.
+//
+// Most club nickname/abbreviation variants ("Man Utd" -> "Manchester United",
+// "AFC Bournemouth" -> "Bournemouth") do NOT need an entry here - teamTokens()
+// in teams.js already strips club-type affixes (FC, AFC, VfB, ...) and expands
+// common abbreviations. Reserve this file for names an algorithm cannot
+// derive: exonyms, and clubs whose common short form is an adjectival or
+// otherwise unrelated form of the full name ("Stade Rennais" -> "Rennes").
+export const TEAM_ALIAS_ENTRIES = [
+  // National teams - closed set, curated on purpose.
+  ["bih", "Bosnia and Herzegovina"],
+  ["b and h", "Bosnia and Herzegovina"],
+  ["bandh", "Bosnia and Herzegovina"],
+  ["bosnia and herzegovina", "Bosnia and Herzegovina"],
+  ["bosnia herzegovina", "Bosnia and Herzegovina"],
+  ["bosnia and herz", "Bosnia and Herzegovina"],
+  ["bosna i hercegovina", "Bosnia and Herzegovina"],
+  ["czech rep", "Czech Republic"],
+  ["czech r", "Czech Republic"],
+  ["czechia", "Czech Republic"],
+  ["ceska", "Czech Republic"],
+  ["ceska r", "Czech Republic"],
+  ["congo dr", "D.R. Congo"],
+  ["congo d r", "D.R. Congo"],
+  ["d r congo", "D.R. Congo"],
+  ["dr congo", "D.R. Congo"],
+  ["democratic republic of congo", "D.R. Congo"],
+  ["dem republic of congo", "D.R. Congo"],
+  ["dem rep of congo", "D.R. Congo"],
+  ["dem rep congo", "D.R. Congo"],
+  ["drc", "D.R. Congo"],
+  ["d r c", "D.R. Congo"],
+  ["rd congo", "D.R. Congo"],
+  ["dr kongo", "D.R. Congo"],
+  ["demokratska republika kongo", "D.R. Congo"],
+  ["demokratska rep kongo", "D.R. Congo"],
+  ["kongo dr", "D.R. Congo"],
+  ["ir iran", "Iran"],
+  ["iran", "Iran"],
+  ["irak", "Iraq"],
+  ["korea republic", "South Korea"],
+  ["juzna koreja", "South Korea"],
+  ["s korea", "South Korea"],
+  ["skorea", "South Korea"],
+  ["turkiye", "Turkey"],
+  ["turska", "Turkey"],
+  ["usa", "United States"],
+  ["u s a", "United States"],
+  ["united states of america", "United States"],
+  ["sad", "United States"],
+  ["alzir", "Algeria"],
+  ["australija", "Australia"],
+  ["austrija", "Austria"],
+  ["belgija", "Belgium"],
+  ["engleska", "England"],
+  ["egipat", "Egypt"],
+  ["ekvador", "Ecuador"],
+  ["francuska", "France"],
+  ["gana", "Ghana"],
+  ["holandija", "Netherlands"],
+  ["hrvatska", "Croatia"],
+  ["kanada", "Canada"],
+  ["katar", "Qatar"],
+  ["kolumbija", "Colombia"],
+  ["kurasao", "Curacao"],
+  ["maroko", "Morocco"],
+  ["meksiko", "Mexico"],
+  ["nemacka", "Germany"],
+  ["novi zeland", "New Zealand"],
+  ["n zealand", "New Zealand"],
+  ["nzealand", "New Zealand"],
+  ["norveska", "Norway"],
+  ["obala slonovace", "Ivory Coast"],
+  ["cote divoire", "Ivory Coast"],
+  ["paragvaj", "Paraguay"],
+  ["saudijska arabija", "Saudi Arabia"],
+  ["skotska", "Scotland"],
+  ["spanija", "Spain"],
+  ["svedska", "Sweden"],
+  ["svajcarska", "Switzerland"],
+  ["tunis", "Tunisia"],
+  ["urugvaj", "Uruguay"],
+  ["zelenortska ostrva", "Cape Verde"],
+  ["juzna afrika", "South Africa"],
+  ["s africa", "South Africa"],
+  ["safrica", "South Africa"],
+
+  // Near-identical national teams. Listed on both sides so the alias rule in
+  // teamSimilarity can hold them apart - a subset name like "Congo" would
+  // otherwise score as a match against "D.R. Congo".
+  ["congo", "Congo"],
+  ["guinea", "Guinea"],
+  ["guinea bissau", "Guinea-Bissau"],
+  ["equatorial guinea", "Equatorial Guinea"],
+  ["north korea", "North Korea"],
+  ["korea dpr", "North Korea"],
+  ["south korea", "South Korea"],
+  ["ireland", "Republic of Ireland"],
+  ["republic of ireland", "Republic of Ireland"],
+  ["northern ireland", "Northern Ireland"],
+
+  // Clubs whose short form shares no token with the full name.
+  ["brighton", "Brighton and Hove Albion"],
+  // Same-city clubs, listed on both sides for the same reason as the countries.
+  ["milan", "AC Milan"],
+  ["ac milan", "AC Milan"],
+  ["inter", "Internazionale"],
+  ["inter milan", "Internazionale"],
+  ["inter milano", "Internazionale"],
+  ["internazionale", "Internazionale"],
+  ["inter miami", "Inter Miami"],
+  ["psg", "Paris Saint-Germain"],
+  ["paris sg", "Paris Saint-Germain"],
+  ["paris saint germain", "Paris Saint-Germain"],
+  ["paris fc", "Paris FC"],
+  ["la coruna", "Deportivo La Coruna"],
+  ["betis", "Real Betis"],
+  ["celta", "Celta Vigo"],
+  ["espanyol", "Espanyol"],
+  ["monza brianza", "Monza"],
+  ["werder", "Werder Bremen"],
+  ["schalke", "Schalke 04"],
+  ["hamburger", "Hamburger SV"],
+  ["frankfurt", "Eintracht Frankfurt"],
+  ["dortmund", "Borussia Dortmund"],
+  ["leverkusen", "Bayer Leverkusen"],
+  ["stuttgart", "Stuttgart"],
+  ["freiburg", "Freiburg"],
+  ["hoffenheim", "Hoffenheim"],
+  ["elversberg", "Elversberg"],
+  ["mainz", "Mainz 05"],
+];
