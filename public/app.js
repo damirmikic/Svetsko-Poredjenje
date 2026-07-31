@@ -24,6 +24,9 @@ const pinnacleLeagueCodeByCompetition = {
   "ligue-1": "france-ligue-1",
   "serie-a": "italy-serie-a",
   laliga: "spain-la-liga",
+  "champions-league": "uefa-champions-league",
+  "europa-league": "uefa-europa-league",
+  "conference-league": "uefa-conference-league",
 };
 const matchWinnerOutcomes = ["home", "draw", "away"];
 const totalGoalsOutcomes = ["over25", "under25"];
@@ -498,8 +501,7 @@ function refreshOddsOnTimer() {
 }
 
 function renderCompetitionTabs() {
-  const allCompetitions = state.data?.competitions || [{ id: defaultCompetitionId, label: "World Cup 2026", hasOffers: true }];
-  const competitions = allCompetitions.filter((competition) => competition.hasOffers !== false);
+  const competitions = state.data?.competitions || [{ id: defaultCompetitionId, label: "World Cup 2026", hasOffers: true }];
 
   if (state.data && state.competitionId && !competitions.some((competition) => competition.id === state.competitionId)) {
     state.competitionId = null;
@@ -507,17 +509,23 @@ function renderCompetitionTabs() {
     return;
   }
 
-  els.competitionTabs.innerHTML = competitions
-    .map(
-      (competition) => `
-        <button type="button" class="${competition.id === state.competitionId ? "active" : ""}" data-competition="${competition.id}">${competition.label}</button>
-      `,
-    )
-    .join("");
+  els.competitionTabs.innerHTML = `
+    <div class="competition-dropdown-container">
+      <select class="competition-select" aria-label="Izaberi takmičenje">
+        ${competitions
+          .map(
+            (c) => `<option value="${c.id}" ${c.id === state.competitionId ? "selected" : ""}>${c.label}</option>`,
+          )
+          .join("")}
+      </select>
+      <span class="competition-dropdown-arrow">▼</span>
+    </div>
+  `;
 
-  els.competitionTabs.querySelectorAll("button").forEach((button) => {
-    button.addEventListener("click", () => {
-      const competitionId = button.dataset.competition;
+  const selectEl = els.competitionTabs.querySelector("select");
+  if (selectEl) {
+    selectEl.addEventListener("change", (e) => {
+      const competitionId = e.target.value;
       if (competitionId === state.competitionId) return;
       state.competitionId = competitionId;
       state.oddsSnapshot = new Map();
@@ -525,7 +533,7 @@ function renderCompetitionTabs() {
       state.changedOddsDirection = new Map();
       loadOdds();
     });
-  });
+  }
 }
 
 function renderBookmakerToggles() {

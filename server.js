@@ -153,6 +153,48 @@ const COMPETITIONS = [
     mozzartLeagueTerm: "la liga",
     btfTerms: ["la liga", "laliga"],
   },
+  {
+    id: "champions-league",
+    label: "UEFA Champions League",
+    terms: ["champions league", "liga šampiona", "liga sampiona", "ucl"],
+    pinnacleLeagueCode: "uefa-champions-league",
+    nsoftTournamentId: 12,
+    superbetTournaments: ["142", "143", "94891"],
+    oddsmathLeagueId: 1245,
+    dualsoftCountry: "Liga Šampiona",
+    dualsoftLeagueName: "Champions League",
+    mozzartCountryTerm: "champions",
+    mozzartLeagueTerm: "league",
+    btfTerms: ["champions league", "ucl"],
+  },
+  {
+    id: "europa-league",
+    label: "UEFA Europa League",
+    terms: ["europa league", "liga evrope", "evropa liga", "liga europe", "uel"],
+    pinnacleLeagueCode: "uefa-europa-league",
+    nsoftTournamentId: 13,
+    superbetTournaments: ["144", "145"],
+    oddsmathLeagueId: 1247,
+    dualsoftCountry: "Europa League",
+    dualsoftLeagueName: "Europa League",
+    mozzartCountryTerm: "europa",
+    mozzartLeagueTerm: "league",
+    btfTerms: ["europa league", "uel"],
+  },
+  {
+    id: "conference-league",
+    label: "UEFA Conference League",
+    terms: ["conference league", "konferencija", "liga konferencija", "uecl"],
+    pinnacleLeagueCode: "uefa-conference-league",
+    nsoftTournamentId: 14,
+    superbetTournaments: ["32382", "48093"],
+    oddsmathLeagueId: 93052,
+    dualsoftCountry: "Conference League",
+    dualsoftLeagueName: "Conference League",
+    mozzartCountryTerm: "conference",
+    mozzartLeagueTerm: "league",
+    btfTerms: ["conference league", "uecl"],
+  },
 ];
 
 const DEFAULT_COMPETITION_ID = "world-cup";
@@ -2314,14 +2356,8 @@ function buildOpportunities(matches) {
 const COMPETITION_AVAILABILITY_TTL_MS = 10 * 60 * 1000;
 const competitionAvailabilityCache = new Map();
 
-async function checkCompetitionHasOffers(competition) {
-  try {
-    const url = pinnacleLeagueOddsUrl(competition.pinnacleLeagueCode || PINNACLE_LEAGUE_CODE);
-    const payload = await fetchPinnacleJson(url);
-    return getPinnacleEvents(payload).length > 0;
-  } catch {
-    return true; // treat lookup failures as "unknown" and keep the tab visible
-  }
+async function checkCompetitionHasOffers() {
+  return true;
 }
 
 async function refreshStaleCompetitionAvailability(excludeId) {

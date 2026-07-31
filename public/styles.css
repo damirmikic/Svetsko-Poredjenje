@@ -1,4 +1,4 @@
-﻿:root {
+:root {
   color-scheme: light;
   --bg: #f5f7f4;
   --surface: #ffffff;
@@ -91,6 +91,58 @@ select {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.competition-dropdown-container {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 28px 0 14px;
+  min-height: 38px;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+}
+
+.competition-dropdown-container:hover {
+  border-color: var(--green);
+  background: var(--surface);
+}
+
+.competition-dropdown-container:focus-within {
+  border-color: var(--green);
+  box-shadow: 0 0 0 3px rgba(12, 122, 67, 0.15);
+}
+
+.competition-select {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  height: 38px;
+  padding: 0;
+  margin: 0;
+}
+
+.competition-select option {
+  background: var(--surface);
+  color: var(--ink);
+  font-weight: 600;
+  padding: 8px;
+}
+
+.competition-dropdown-arrow {
+  position: absolute;
+  right: 10px;
+  font-size: 9px;
+  color: var(--muted);
+  pointer-events: none;
 }
 
 .segmented {
