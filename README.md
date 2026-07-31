@@ -1,4 +1,4 @@
-﻿# Fudbal Kvote
+# Fudbal Kvote
 
 Web dashboard za poredjenje kvota srpskih kladionica na fudbalskim takmicenjima.
 
@@ -17,6 +17,9 @@ Prebacivanje izmedju takmicenja klikom na tab u gornjoj traci:
 | `ligue-1` | France – Ligue 1 |
 | `serie-a` | Italy – Serie A |
 | `laliga` | Spain – LaLiga |
+| `champions-league` | UEFA Champions League |
+| `europa-league` | UEFA Europa League |
+| `conference-league` | UEFA Conference League |
 
 ## Prikazi (tabovi)
 
@@ -44,6 +47,14 @@ Prebacivanje izmedju takmicenja klikom na tab u gornjoj traci:
 | `betfair_lay` | Betfair Lay | Oddsmath (referenca) |
 
 Kladionice se mogu ukljuciti/iskljuciti toggle-ima u levom panelu.
+
+## Caching i Performanse
+
+Kako bi se sprecilo preopterecenje eksternih sportsbook API-ja i osigurali trenutni odzivi za frontend:
+
+- **Feed-level Cache (60s)**: Svih 9 feedova (Pinnacle, MerkurXtip, MaxBet, SoccerBet, Mozzart, Superbet, BalkanBet, BetInAsia, Betfair Lay) se kesiraju na serveru po takmicenju na 60 sekundi.
+- **Deduplikacija u toku (Request Coalescing)**: Vise istovremenih zahteva ka istom feedu dele jedan jedini aktivni HTTP poziv ka eksternom API-ju.
+- **Asinhrono osvezavanje takmicenja (Fire-and-forget)**: Provera dostupnosti takmicenja (`refreshStaleCompetitionAvailability`) se izvrsava u pozadini, bez blokiranja `/api/odds` odgovora koji se iz memorije vraca za **<5 ms**.
 
 ## Pokretanje
 
@@ -120,7 +131,7 @@ Odgovor sadrzi:
 | Polje | Opis |
 |-------|------|
 | `matches` | Lista meceva sa kvotama, best/margin, kickoff vreme |
-| `feeds` | Status svakog feeda (ok/error), broj meceva |
+| `feeds` | Status svakog feeda (ok/error), `cached` fleg, broj meceva |
 | `unmatched` | Ponude koje nisu mogle biti uparene |
 | `opportunities` | Value bets (kvota iznad Pinnacle no-vig praga) |
 | `filter.fixtureSource` | Koja kladionica je bila master za listu meceva |
@@ -217,7 +228,7 @@ npm test
 ## Struktura projekta
 
 ```
-server.js                         Node HTTP server, fetch i normalizacija kvota
+server.js                         Node HTTP server, fetch, feed caching i normalizacija kvota
 netlify.toml                      Netlify build, functions i API rewrite konfiguracija
 netlify/functions/odds.js         Serverless API entrypoint
 netlify/functions/health.js       Health check endpoint
@@ -226,5 +237,5 @@ public/app.js                     Dashboard logika, renderovanje, state
 public/styles.css                 UI stilovi
 public/shared/teams.js            Uparivanje meceva — logika (server + browser)
 public/shared/team-aliases.js     Rucna tabela aliasa — ovde se dodaju nova imena
-test/                             node:test testovi
+test/                             node:test testovi (aggregate, teams, cache)
 ```
