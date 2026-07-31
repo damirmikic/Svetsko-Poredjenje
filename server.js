@@ -2142,7 +2142,11 @@ export function aggregateMatches(results) {
   const byMatch = new Map();
   const unmatched = [];
   const report = createUnmatchedReporter(unmatched);
-  const truthResult = results.find((result) => result.bookmaker.sourceOfTruth && result.status === "ok" && result.matches.length);
+  const truthResult =
+    results.find((result) => result.bookmaker.sourceOfTruth && result.status === "ok" && result.matches.length) ||
+    // Pinnacle is down — fall back to an oddsmath source (BetInAsia / Betfair)
+    // which uses full English team names and serves as a reliable fixture list.
+    results.find((result) => result.bookmaker.type === "oddsmath" && result.status === "ok" && result.matches.length);
 
   if (truthResult) {
     for (const offer of truthResult.matches) {
@@ -2353,6 +2357,13 @@ export async function getOddsPayload(competitionId) {
   competitionAvailabilityCache.set(competition.id, { hasOffers: matches.length > 0, checkedAt: Date.now() });
   await refreshStaleCompetitionAvailability(competition.id);
 
+  // Determine which bookmaker was used as the fixture list master.
+  const pinnacleResult = settled.find((r) => r.bookmaker.sourceOfTruth && r.status === "ok" && r.matches.length);
+  const fallbackResult = !pinnacleResult
+    ? settled.find((r) => r.bookmaker.type === "oddsmath" && r.status === "ok" && r.matches.length)
+    : null;
+  const fixtureSourceBookmaker = pinnacleResult?.bookmaker || fallbackResult?.bookmaker || null;
+
   return {
     generatedAt: Date.now(),
     elapsedMs: Date.now() - startedAt,
@@ -2390,9 +2401,16 @@ export async function getOddsPayload(competitionId) {
       sport: "football",
       competition: competition.label,
       terms: competition.terms || [],
+      // Which bookmaker's fixture list is the master (determines team name display).
+      // null = no fixture source available (no feeds responded).
+      fixtureSource: fixtureSourceBookmaker
+        ? { id: fixtureSourceBookmaker.id, name: fixtureSourceBookmaker.name, isPrimary: Boolean(pinnacleResult) }
+        : null,
       note:
         matches.length === 0
           ? `No ${competition.label}-labelled matches were returned by the enabled feeds yet.`
+          : fixtureSourceBookmaker && !pinnacleResult
+          ? `Pinnacle nije dostupan — nazivi timova preuzeti od ${fixtureSourceBookmaker.name}.`
           : null,
     },
   };

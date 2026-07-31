@@ -1398,16 +1398,23 @@ function renderSummary(matches) {
   els.activeFeeds.textContent = `${okFeeds}/${feeds.length || bookmakerOrder.length}`;
   els.bestMargin.textContent = bestMargin === null ? "-" : `${bestMargin.toFixed(2)}%`;
   els.updatedAt.textContent = state.data?.generatedAt ? formatDateTime(state.data.generatedAt) : "-";
+
   const competitionLabel = state.data?.filter?.competition || "World Cup";
+  const fixtureSource = state.data?.filter?.fixtureSource;
+  const fixtureWarning =
+    fixtureSource && fixtureSource.isPrimary === false
+      ? ` ⚠ Pinnacle nedostupan — lista mečeva od ${fixtureSource.name}.`
+      : "";
+
   els.resultNote.textContent =
     state.data?.filter?.note ||
     (state.view === "today"
-      ? `${matches.length} danasnjih mec(eva), period do sutra u 07:00.`
+      ? `${matches.length} danasnjih mec(eva), period do sutra u 07:00.${fixtureWarning}`
       : state.view === "goals"
-        ? `${matches.length} ${competitionLabel} mec(eva), golovi 2.5 ili 3.5, ${state.data?.elapsedMs || 0} ms proxy vreme.`
+        ? `${matches.length} ${competitionLabel} mec(eva), golovi 2.5 ili 3.5, ${state.data?.elapsedMs || 0} ms proxy vreme.${fixtureWarning}`
         : state.view === "qualify"
-          ? `${matches.length} nokaut mec(eva) sa kvotama "ide dalje", ${state.data?.elapsedMs || 0} ms proxy vreme.`
-          : `${matches.length} ${competitionLabel} mec(eva), ${state.data?.elapsedMs || 0} ms proxy vreme.`);
+          ? `${matches.length} nokaut mec(eva) sa kvotama "ide dalje", ${state.data?.elapsedMs || 0} ms proxy vreme.${fixtureWarning}`
+          : `${matches.length} ${competitionLabel} mec(eva), ${state.data?.elapsedMs || 0} ms proxy vreme.${fixtureWarning}`);
 }
 
 function updateValueTicker(matches) {
