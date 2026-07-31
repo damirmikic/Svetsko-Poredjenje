@@ -25,6 +25,7 @@
             <button type="button" data-view="goals">Golovi</button>
             <button type="button" data-view="qualify">Ide dalje</button>
             <button type="button" data-view="accumulator">Množenje kvota</button>
+            <button type="button" data-view="unmatched" id="unmatchedTabBtn">Neuparene <span class="unmatched-tab-badge hidden" id="unmatchedTabBadge"></span></button>
           </div>
           <button class="refresh-button" id="refreshButton" type="button">
             <span class="refresh-icon" aria-hidden="true"></span>
@@ -143,6 +144,8 @@
           </div>
 
           <div class="accumulator-view hidden" id="accumulatorView"></div>
+
+          <div class="unmatched-view hidden" id="unmatchedView"></div>
 
           <details class="unmatched-panel hidden" id="unmatchedPanel">
             <summary>Neuparene utakmice <span id="unmatchedCount"></span></summary>

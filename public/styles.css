@@ -1,4 +1,4 @@
-:root {
+﻿:root {
   color-scheme: light;
   --bg: #f5f7f4;
   --surface: #ffffff;
@@ -1562,4 +1562,229 @@ select,
     grid-template-columns: 1fr;
     gap: 2px;
   }
+}
+
+/* â”€â”€ Unmatched tab badge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.unmatched-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 99px;
+  background: var(--red);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+/* â”€â”€ Unmatched full-screen view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.unmatched-view {
+  padding: 16px 0 40px;
+}
+
+.uv-header {
+  margin-bottom: 20px;
+}
+
+.uv-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.uv-hint code {
+  background: var(--soft);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.uv-sources {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* â”€â”€ Source block card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.uv-source-block {
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: 0 4px 16px rgba(20, 31, 25, 0.07);
+}
+
+.uv-source-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 18px;
+  background: #12231b;
+  border-bottom: 2px solid var(--line);
+}
+
+.uv-source-name {
+  font-weight: 700;
+  font-size: 14px;
+  color: #f7fff9;
+  letter-spacing: 0.01em;
+}
+
+.uv-source-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: #12231b;
+  background: #c2f5d5;
+  padding: 2px 10px;
+  border-radius: 99px;
+}
+
+/* â”€â”€ Table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.uv-table-wrap {
+  overflow-x: auto;
+}
+
+.uv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  table-layout: fixed;
+}
+
+.uv-table colgroup col:nth-child(1) { width: 38%; }
+.uv-table colgroup col:nth-child(2) { width: 13%; }
+.uv-table colgroup col:nth-child(3) { width: 18%; }
+.uv-table colgroup col:nth-child(4) { width: 31%; }
+
+.uv-table thead tr {
+  background: #f0f4ee;
+}
+
+.uv-table thead th {
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #4a5e4a;
+  padding: 9px 14px;
+  text-align: left;
+  border-bottom: 2px solid var(--line);
+  border-right: 1px solid var(--line);
+}
+
+.uv-table thead th:last-child {
+  border-right: none;
+}
+
+.uv-table tbody tr {
+  border-bottom: 1px solid var(--line);
+  transition: background 0.12s;
+}
+
+.uv-table tbody tr:nth-child(even) {
+  background: #f9fbf8;
+}
+
+.uv-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.uv-table tbody tr:hover {
+  background: #e8f5ee;
+}
+
+.uv-table td {
+  padding: 10px 14px;
+  vertical-align: middle;
+  border-right: 1px solid var(--line);
+}
+
+.uv-table td:last-child {
+  border-right: none;
+}
+
+/* â”€â”€ Cell styles â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.uv-teams {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.uv-teams strong {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.uv-sep {
+  display: inline-block;
+  margin: 0 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+}
+
+.uv-time {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.uv-reason-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--amber-2);
+  color: var(--amber);
+  border: 1px solid rgba(185, 119, 7, 0.2);
+  white-space: nowrap;
+}
+
+.uv-closest-cell {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.uv-closest {
+  font-style: italic;
+  color: var(--ink);
+  margin-right: 5px;
+  font-weight: 500;
+}
+
+.uv-score {
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--soft);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.uv-no-match {
+  color: var(--red);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* â”€â”€ Empty state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
+.unmatched-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 20px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.unmatched-empty-icon {
+  font-size: 40px;
 }

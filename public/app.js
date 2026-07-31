@@ -92,6 +92,8 @@ const els = {
   unmatchedPanel: document.querySelector("#unmatchedPanel"),
   unmatchedCount: document.querySelector("#unmatchedCount"),
   unmatchedList: document.querySelector("#unmatchedList"),
+  unmatchedView: document.querySelector("#unmatchedView"),
+  unmatchedTabBadge: document.querySelector("#unmatchedTabBadge"),
 };
 
 function formatOdd(value) {
@@ -580,19 +582,24 @@ function renderView() {
     goals: `${competitionLabel} - Golovi 2.5`,
     qualify: `${competitionLabel} - Ide dalje (nokaut faza)`,
     accumulator: "Množenje kvota na favorite za naredne mečeve",
+    unmatched: "Neuparene utakmice po izvoru",
   };
   els.tableTitle.textContent = titles[state.view] || titles.all;
   els.oddsTable.classList.toggle("is-today", state.view === "today");
 
   const isAcc = state.view === "accumulator";
-  els.oddsTableWrap.classList.toggle("hidden", isAcc);
+  const isUnmatched = state.view === "unmatched";
+  els.oddsTableWrap.classList.toggle("hidden", isAcc || isUnmatched);
   els.accumulatorView.classList.toggle("hidden", !isAcc);
   els.accumulatorFilterSection.classList.toggle("hidden", !isAcc);
+  els.unmatchedView.classList.toggle("hidden", !isUnmatched);
+  // Hide the old collapsible panel when the dedicated tab is open
+  els.unmatchedPanel.classList.toggle("hidden", isUnmatched || (state.data?.unmatched?.length ?? 0) === 0);
 
   const noVigLimitSec = els.noVigLimitInput?.closest("section");
   const thresholdSec = els.oddsThresholdInput?.closest("section");
-  if (noVigLimitSec) noVigLimitSec.style.display = isAcc ? "none" : "block";
-  if (thresholdSec) thresholdSec.style.display = isAcc ? "none" : "block";
+  if (noVigLimitSec) noVigLimitSec.style.display = (isAcc || isUnmatched) ? "none" : "block";
+  if (thresholdSec) thresholdSec.style.display = (isAcc || isUnmatched) ? "none" : "block";
 }
 
 function activeOutcomes() {
@@ -1797,24 +1804,123 @@ function renderAccumulatorView(matches) {
 
 function renderUnmatched() {
   const unmatched = state.data?.unmatched || [];
-  els.unmatchedPanel.classList.toggle("hidden", unmatched.length === 0);
-  if (!unmatched.length) return;
+  const total = unmatched.length;
 
-  els.unmatchedCount.textContent = `(${unmatched.length})`;
-  els.unmatchedList.innerHTML = unmatched
-    .map((item) => {
-      const closest = item.closest
-        ? `najblize: ${escapeHtml(item.closest)} (${item.score ?? "-"})`
-        : "nema kandidata";
+  // Update badge on the tab button
+  if (els.unmatchedTabBadge) {
+    els.unmatchedTabBadge.textContent = total > 0 ? String(total) : "";
+    els.unmatchedTabBadge.classList.toggle("hidden", total === 0);
+  }
+
+  // Old collapsible panel (hidden when unmatched view tab is open — handled in renderView)
+  const showOldPanel = total > 0 && state.view !== "unmatched";
+  els.unmatchedPanel.classList.toggle("hidden", !showOldPanel);
+  if (total > 0) {
+    els.unmatchedCount.textContent = `(${total})`;
+    els.unmatchedList.innerHTML = unmatched
+      .map((item) => {
+        const closest = item.closest
+          ? `najblize: ${escapeHtml(item.closest)} (${item.score ?? "-"})`
+          : "nema kandidata";
+        return `
+          <div class="unmatched-item">
+            <span class="unmatched-book">${escapeHtml(item.bookmakerName || item.bookmakerId)}</span>
+            <span class="unmatched-teams">${escapeHtml(item.home)} - ${escapeHtml(item.away)}</span>
+            <span class="unmatched-reason">${escapeHtml(item.reason)} · ${closest}</span>
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  // Full-screen unmatched view — grouped by source (bookmaker)
+  if (state.view !== "unmatched") return;
+
+  if (total === 0) {
+    els.unmatchedView.innerHTML = `
+      <div class="unmatched-empty">
+        <div class="unmatched-empty-icon">✔️</div>
+        <p>Sve utakmice su uspesno uparene!</p>
+      </div>
+    `;
+    return;
+  }
+
+  // Group by bookmakerId
+  const bySource = new Map();
+  for (const item of unmatched) {
+    const key = item.bookmakerId;
+    if (!bySource.has(key)) bySource.set(key, { name: item.bookmakerName || item.bookmakerId, items: [] });
+    bySource.get(key).items.push(item);
+  }
+
+  const reasonLabel = (r) => {
+    if (r === "no-candidates") return "Nema kandidata";
+    if (r === "score-too-low") return "Skor premali";
+    if (r === "ambiguous") return "Više podudaranja";
+    return r || "-";
+  };
+
+  const sectionsHtml = [...bySource.entries()].map(([, group]) => {
+    const rowsHtml = group.items.map((item) => {
+      const closestHtml = item.closest
+        ? `<span class="uv-closest">${escapeHtml(item.closest)}</span><span class="uv-score">(${item.score ?? "-"})</span>`
+        : `<span class="uv-no-match">nema kandidata</span>`;
+      const kickOff = item.kickOffTime ? formatTime(item.kickOffTime) : "-";
       return `
-        <div class="unmatched-item">
-          <span class="unmatched-book">${escapeHtml(item.bookmakerName || item.bookmakerId)}</span>
-          <span class="unmatched-teams">${escapeHtml(item.home)} - ${escapeHtml(item.away)}</span>
-          <span class="unmatched-reason">${escapeHtml(item.reason)} · ${closest}</span>
-        </div>
+        <tr>
+          <td class="uv-teams">
+            <strong>${escapeHtml(item.home)}</strong>
+            <span class="uv-sep">vs</span>
+            <strong>${escapeHtml(item.away)}</strong>
+          </td>
+          <td class="uv-time">${escapeHtml(kickOff)}</td>
+          <td class="uv-reason"><span class="uv-reason-badge">${escapeHtml(reasonLabel(item.reason))}</span></td>
+          <td class="uv-closest-cell">${closestHtml}</td>
+        </tr>
       `;
-    })
-    .join("");
+    }).join("");
+
+    return `
+      <div class="uv-source-block">
+        <div class="uv-source-header">
+          <span class="uv-source-name">${escapeHtml(group.name)}</span>
+          <span class="uv-source-count">${group.items.length} neuparenih</span>
+        </div>
+        <div class="uv-table-wrap">
+          <table class="uv-table">
+            <colgroup>
+              <col style="width:38%">
+              <col style="width:13%">
+              <col style="width:18%">
+              <col style="width:31%">
+            </colgroup>
+            <thead>
+              <tr>
+                <th>Tim (source)</th>
+                <th>Vreme</th>
+                <th>Razlog</th>
+                <th>Najblize upareno</th>
+              </tr>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  els.unmatchedView.innerHTML = `
+    <div class="uv-header">
+      <p class="uv-hint">
+        Utakmice koje sistem nije mogao da upari. Dodaj alias u
+        <code>public/shared/team-aliases.js</code> ako je isti tim.
+      </p>
+    </div>
+    <div class="uv-sources">
+      ${sectionsHtml}
+    </div>
+  `;
 }
 
 function render() {
