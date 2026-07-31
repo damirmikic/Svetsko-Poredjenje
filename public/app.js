@@ -1022,13 +1022,18 @@ function normalizePinnacleOffer(event) {
 async function hydratePinnacleFromBrowser() {
   const pinnacleFeed = state.data?.feeds?.find((feed) => feed.bookmakerId === "pinnacle");
 
-  const hasPinnacleOdds = (state.data?.matches || []).some((match) =>
-    matchWinnerOutcomes.some((outcome) => isValidOdd(match.bookmakers?.pinnacle?.odds?.[outcome])),
-  );
-  const hasPinnacleGoals = (state.data?.matches || []).some((match) =>
-    hasCompleteTotals(match.bookmakers?.pinnacle?.totals25),
-  );
-  if (!state.data || (hasPinnacleOdds && hasPinnacleGoals)) return;
+  // Per-match, not "does any match anywhere have data": the patch loop below
+  // fixes up whichever matches the browser fetch covers, so skipping the
+  // fetch is only safe when EVERY match already has full Pinnacle data. The
+  // old any-match check let one complete match on the page (or even one
+  // complete outcome on one match, since matchWinnerOutcomes.some() only
+  // needs a single non-null price) suppress the fallback for every other
+  // match still missing Pinnacle odds or goals.
+  const isPinnacleComplete = (match) =>
+    matchWinnerOutcomes.every((outcome) => isValidOdd(match.bookmakers?.pinnacle?.odds?.[outcome])) &&
+    hasCompleteTotals(match.bookmakers?.pinnacle?.totals25);
+  const needsHydration = (state.data?.matches || []).some((match) => !isPinnacleComplete(match));
+  if (!state.data || !needsHydration) return;
 
   const params = new URLSearchParams({
     sportId: String(pinnacleBrowserSportId),
