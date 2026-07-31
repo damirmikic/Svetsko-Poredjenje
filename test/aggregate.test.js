@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { aggregateMatches } from "../server.js";
+import { aggregateMatches, normalizeCompetitionName } from "../server.js";
 import { createMatchKey } from "../public/shared/teams.js";
 
 // Kickoff far enough ahead that the "drop matches already started" filter keeps it.
@@ -93,6 +93,19 @@ test("reports an unrecognised team instead of dropping it silently", () => {
   assert.equal(unmatched[0].bookmakerId, "maxbet");
   assert.equal(unmatched[0].home, "Rayo Vallecano");
   assert.ok(unmatched[0].reason);
+});
+
+test("empty league name falls through instead of defaulting to World Cup", () => {
+  // Regression: normalizeCompetitionName used to hardcode "World Cup 2026" as
+  // its own fallback for empty input, which made every call site's
+  // `|| competition.label` dead code - an orphan Ligue 1 fixture (unmatched
+  // due to a name variant, or with no leagueName field on that feed) rendered
+  // labelled "World Cup 2026" regardless of which competition tab it came from.
+  assert.equal(normalizeCompetitionName(""), "");
+  assert.equal(normalizeCompetitionName(null), "");
+  assert.equal(normalizeCompetitionName("") || "France - Ligue 1", "France - Ligue 1");
+  assert.equal(normalizeCompetitionName("Fifa World Cup"), "World Cup 2026");
+  assert.equal(normalizeCompetitionName("England - Premier League"), "England - Premier League");
 });
 
 test("never merges two different fixtures kicking off together", () => {

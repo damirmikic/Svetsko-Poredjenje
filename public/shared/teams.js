@@ -12,6 +12,11 @@
 //   3. teamTokens        - token-level cleanup: drop club-type affixes, expand
 //                          abbreviations. Handles most club variants generically.
 //   4. teamSimilarity    - fuzzy score for whatever the first three layers miss.
+//
+// The curated alias table lives in ./team-aliases.js, kept separate so that
+// adding a name a feed uses doesn't require touching this matching logic.
+
+import { TEAM_ALIAS_ENTRIES } from "./team-aliases.js";
 
 const DIACRITIC_REPLACEMENTS = [
   [/[đð]/g, "dj"], // đ ð
@@ -59,134 +64,14 @@ const TOKEN_SYNONYMS = new Map([
   ["ath", "athletic"],
   ["dep", "deportivo"],
   ["inter", "internazionale"],
+  // French club demonyms: the common short name is the city, but feeds often
+  // send the adjectival club name, which shares no token with the city at
+  // all ("rennais" vs "rennes" score 0.075 against the 0.72 threshold).
+  ["rennais", "rennes"],
+  ["brestois", "brest"],
+  ["lyonnais", "lyon"],
 ]);
 
-// Names no amount of tokenizing recovers: exonyms and clubs whose common short
-// form shares no tokens with the full name.
-const ALIAS_ENTRIES = [
-  // National teams - closed set, curated on purpose.
-  ["bih", "Bosnia and Herzegovina"],
-  ["b and h", "Bosnia and Herzegovina"],
-  ["bandh", "Bosnia and Herzegovina"],
-  ["bosnia and herzegovina", "Bosnia and Herzegovina"],
-  ["bosnia herzegovina", "Bosnia and Herzegovina"],
-  ["bosnia and herz", "Bosnia and Herzegovina"],
-  ["bosna i hercegovina", "Bosnia and Herzegovina"],
-  ["czech rep", "Czech Republic"],
-  ["czech r", "Czech Republic"],
-  ["czechia", "Czech Republic"],
-  ["ceska", "Czech Republic"],
-  ["ceska r", "Czech Republic"],
-  ["congo dr", "D.R. Congo"],
-  ["congo d r", "D.R. Congo"],
-  ["d r congo", "D.R. Congo"],
-  ["dr congo", "D.R. Congo"],
-  ["democratic republic of congo", "D.R. Congo"],
-  ["dem republic of congo", "D.R. Congo"],
-  ["dem rep of congo", "D.R. Congo"],
-  ["dem rep congo", "D.R. Congo"],
-  ["drc", "D.R. Congo"],
-  ["d r c", "D.R. Congo"],
-  ["rd congo", "D.R. Congo"],
-  ["dr kongo", "D.R. Congo"],
-  ["demokratska republika kongo", "D.R. Congo"],
-  ["demokratska rep kongo", "D.R. Congo"],
-  ["kongo dr", "D.R. Congo"],
-  ["ir iran", "Iran"],
-  ["iran", "Iran"],
-  ["irak", "Iraq"],
-  ["korea republic", "South Korea"],
-  ["juzna koreja", "South Korea"],
-  ["s korea", "South Korea"],
-  ["skorea", "South Korea"],
-  ["turkiye", "Turkey"],
-  ["turska", "Turkey"],
-  ["usa", "United States"],
-  ["u s a", "United States"],
-  ["united states of america", "United States"],
-  ["sad", "United States"],
-  ["alzir", "Algeria"],
-  ["australija", "Australia"],
-  ["austrija", "Austria"],
-  ["belgija", "Belgium"],
-  ["engleska", "England"],
-  ["egipat", "Egypt"],
-  ["ekvador", "Ecuador"],
-  ["francuska", "France"],
-  ["gana", "Ghana"],
-  ["holandija", "Netherlands"],
-  ["hrvatska", "Croatia"],
-  ["kanada", "Canada"],
-  ["katar", "Qatar"],
-  ["kolumbija", "Colombia"],
-  ["kurasao", "Curacao"],
-  ["maroko", "Morocco"],
-  ["meksiko", "Mexico"],
-  ["nemacka", "Germany"],
-  ["novi zeland", "New Zealand"],
-  ["n zealand", "New Zealand"],
-  ["nzealand", "New Zealand"],
-  ["norveska", "Norway"],
-  ["obala slonovace", "Ivory Coast"],
-  ["cote divoire", "Ivory Coast"],
-  ["paragvaj", "Paraguay"],
-  ["saudijska arabija", "Saudi Arabia"],
-  ["skotska", "Scotland"],
-  ["spanija", "Spain"],
-  ["svedska", "Sweden"],
-  ["svajcarska", "Switzerland"],
-  ["tunis", "Tunisia"],
-  ["urugvaj", "Uruguay"],
-  ["zelenortska ostrva", "Cape Verde"],
-  ["juzna afrika", "South Africa"],
-  ["s africa", "South Africa"],
-  ["safrica", "South Africa"],
-
-  // Near-identical national teams. Listed on both sides so the alias rule in
-  // teamSimilarity can hold them apart - a subset name like "Congo" would
-  // otherwise score as a match against "D.R. Congo".
-  ["congo", "Congo"],
-  ["guinea", "Guinea"],
-  ["guinea bissau", "Guinea-Bissau"],
-  ["equatorial guinea", "Equatorial Guinea"],
-  ["north korea", "North Korea"],
-  ["korea dpr", "North Korea"],
-  ["south korea", "South Korea"],
-  ["ireland", "Republic of Ireland"],
-  ["republic of ireland", "Republic of Ireland"],
-  ["northern ireland", "Northern Ireland"],
-
-  // Clubs whose short form shares no token with the full name.
-  ["brighton", "Brighton and Hove Albion"],
-  // Same-city clubs, listed on both sides for the same reason as the countries.
-  ["milan", "AC Milan"],
-  ["ac milan", "AC Milan"],
-  ["inter", "Internazionale"],
-  ["inter milan", "Internazionale"],
-  ["inter milano", "Internazionale"],
-  ["internazionale", "Internazionale"],
-  ["inter miami", "Inter Miami"],
-  ["psg", "Paris Saint-Germain"],
-  ["paris sg", "Paris Saint-Germain"],
-  ["paris saint germain", "Paris Saint-Germain"],
-  ["paris fc", "Paris FC"],
-  ["la coruna", "Deportivo La Coruna"],
-  ["betis", "Real Betis"],
-  ["celta", "Celta Vigo"],
-  ["espanyol", "Espanyol"],
-  ["monza brianza", "Monza"],
-  ["werder", "Werder Bremen"],
-  ["schalke", "Schalke 04"],
-  ["hamburger", "Hamburger SV"],
-  ["frankfurt", "Eintracht Frankfurt"],
-  ["dortmund", "Borussia Dortmund"],
-  ["leverkusen", "Bayer Leverkusen"],
-  ["stuttgart", "Stuttgart"],
-  ["freiburg", "Freiburg"],
-  ["hoffenheim", "Hoffenheim"],
-  ["elversberg", "Elversberg"],
-  ["mainz", "Mainz 05"],
-];
 
 export function canonicalizeTeam(value) {
   let text = String(value ?? "")
@@ -206,7 +91,7 @@ export function canonicalizeTeam(value) {
 // Alias keys run through canonicalizeTeam at load so the table stays consistent
 // with lookup, and so entries can be written in readable form.
 const TEAM_ALIASES = new Map(
-  ALIAS_ENTRIES.map(([key, display]) => [canonicalizeTeam(key), display]),
+  TEAM_ALIAS_ENTRIES.map(([key, display]) => [canonicalizeTeam(key), display]),
 );
 
 function isNoiseToken(token, index) {
@@ -277,7 +162,7 @@ export function teamSimilarity(a, b) {
   // only way to separate "Guinea" / "Guinea-Bissau" from "Nottingham" /
   // "Nottingham Forest": both are a one-token name inside a two-token name, so
   // no amount of string scoring can tell them apart. Listing either side in
-  // ALIAS_ENTRIES settles it.
+  // TEAM_ALIAS_ENTRIES settles it.
   const aliasA = TEAM_ALIASES.get(canonicalizeTeam(a));
   const aliasB = TEAM_ALIASES.get(canonicalizeTeam(b));
   if (aliasA && aliasB) return aliasA === aliasB ? 1 : 0;

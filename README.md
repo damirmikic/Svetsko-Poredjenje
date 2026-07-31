@@ -107,12 +107,14 @@ Utakmica se spaja tek kada **oba** tima predju prag (`0.72`), i odbija se kada s
 kandidata preblizu (`margin 0.08`). Spajanje pogresnih meceva bi prikazalo tudje kvote
 u istom redu, sto je gore nego da reda nema.
 
-Kada oba imena postoje u `ALIAS_ENTRIES` a razlicita su, tretiraju se kao razliciti timovi.
+Kada oba imena postoje u tabeli a razlicita su, tretiraju se kao razliciti timovi.
 To je jedini nacin da se razdvoje `Guinea` / `Guinea-Bissau` od `Nottingham` / `Nottingham Forest` -
 strukturno su isti slucaj, pa rucna tabela mora da presudi.
 
 Ponude koje se ne uparе vracaju se u `unmatched` polju `/api/odds` i prikazuju se
-ispod tabele, da bi imena koja nedostaju bila vidljiva umesto da tiho nestanu.
+ispod tabele, da bi imena koja nedostaju bila vidljiva umesto da tiho nestanu. Kada se
+tamo pojavi nepoznato ime, dodaj ga u `public/shared/team-aliases.js` - to je jedini
+fajl koji treba menjati za novi alias, odvojen od logike uparivanja u `teams.js`.
 
 ```bash
 npm test
@@ -126,7 +128,8 @@ netlify.toml            Netlify build, functions i API rewrite konfiguracija
 netlify/functions       Serverless API entrypoint za Netlify
 public/index.html       App shell
 public/app.js           Dashboard logika i renderovanje
-public/shared/teams.js  Normalizacija imena i uparivanje meceva (server + browser)
+public/shared/teams.js         Uparivanje imena/meceva - logika (server + browser)
+public/shared/team-aliases.js  Rucna tabela aliasa - podaci, ovde se dodaju nova imena
 public/styles.css       UI stilovi
 test/                   node:test testovi
 ```
