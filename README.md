@@ -1,28 +1,66 @@
-# SP Kvote
+﻿# Fudbal Kvote
 
-Web dashboard za poredjenje kvota srpskih kladionica za FIFA World Cup 2026.
+Web dashboard za poredjenje kvota srpskih kladionica na fudbalskim takmicenjima.
 
-App trenutno povlaci fudbalske kvote iz aktivnih sportsbook feedova, filtrira samo World Cup meceve i prikazuje ih u OddsPortal-style tabeli sa najboljim kvotama po ishodu.
-Pinnacle je primarni katalog meceva kada je feed omogucen: ostale kladionice se kace samo na meceve koje Pinnacle vrati za World Cup.
+Povlaci kvote iz aktivnih sportsbook feedova, filtrira mece po izabranom takmicenju i prikazuje ih u
+OddsPortal-style tabeli sa najboljim kvotama po ishodu, value signalima i uporedjivanjem sa Pinnacle no-vig referencom.
+
+## Takmicenja
+
+Prebacivanje izmedju takmicenja klikom na tab u gornjoj traci:
+
+| ID | Naziv |
+|----|-------|
+| `world-cup` | FIFA World Cup 2026 |
+| `epl` | England – Premier League |
+| `bundesliga` | Germany – Bundesliga |
+| `ligue-1` | France – Ligue 1 |
+| `serie-a` | Italy – Serie A |
+| `laliga` | Spain – LaLiga |
+
+## Prikazi (tabovi)
+
+| Tab | Opis |
+|-----|------|
+| **1X2** | Konacni ishod — home / draw / away |
+| **Danasnji mecevi** | Danasnji mecevi sa 1X2 i golovima 2.5 zajedno |
+| **Golovi** | Over/Under 2.5 (ili 3.5 kao fallback po mecu) |
+| **Ide dalje** | Nokaut faza — kvote ko prolazi dalje |
+| **Mnozenje kvota** | Akumulator: najboljih X meca po favoritu ili golovima |
+| **Neuparene** | Mecevi koje sistem nije mogao da upari, grupisani po kladionici |
+
+## Kladionice
+
+| ID | Naziv | Tip |
+|----|-------|-----|
+| `pinnacle` | Pinnacle | Primarni katalog meceva i referenca (no-vig) |
+| `merkurxtip` | MerkurXtip | Dualsoft |
+| `maxbet` | MaxBet | Dualsoft |
+| `mozzartbet` | Mozzart | Mozzartbet |
+| `superbet` | Superbet | Superbet |
+| `balkanbet` | BalkanBet | NSoft |
+| `soccerbet` | SoccerBet | Dualsoft |
+| `betinasia` | BetInAsia | Oddsmath |
+| `betfair_lay` | Betfair Lay | Oddsmath (referenca) |
+
+Kladionice se mogu ukljuciti/iskljuciti toggle-ima u levom panelu.
 
 ## Pokretanje
 
-Potreban je Node.js 18 ili noviji.
+Potreban je **Node.js 18** ili noviji.
 
 ```bash
 npm install
 npm run dev
 ```
 
-Lokalne kredencijale mozes drzati u `.env` fajlu. `.env` je ignorisan u git-u; koristi `.env.example` kao sablon.
-
 Zatim otvori:
 
-```text
+```
 http://localhost:3000
 ```
 
-Ako je port 3000 vec zauzet, pokreni na drugom portu:
+Ako je port 3000 vec zauzet:
 
 ```bash
 PORT=3001 npm run dev
@@ -32,110 +70,161 @@ PORT=3001 npm run dev
 
 Repo je spreman za Netlify:
 
-- Build command: `npm run build`
-- Publish directory: `public`
-- Functions directory: `netlify/functions`
-- `/api/odds` i `/api/health` se rewrite-uju na Netlify Functions preko `netlify.toml`.
+- **Build command**: `npm run build`
+- **Publish directory**: `public`
+- **Functions directory**: `netlify/functions`
+- `/api/odds` i `/api/health` se rewrite-uju na Netlify Functions putem `netlify.toml`
 
-U Netlify environment variables dodaj iste vrednosti koje koristis lokalno u `.env`, ako menjas default-e. Za trenutni setup je obicno dovoljan:
+Lokalne kredencijale drzi u `.env` fajlu. `.env` je ignorisan u git-u; koristi `.env.example` kao sablon.
 
-```text
-PINNACLE_LEAGUE_CODE=fifa-world-cup
-```
+## Konfiguracija (`.env`)
 
-## Pinnacle feed
+### Pinnacle
 
-Opcioni parametri:
+| Promenljiva | Default | Opis |
+|-------------|---------|------|
+| `PINNACLE_API_BASE` | `https://www.pinnacle888.com/sports-service/sv/euro` | Base URL za Pinnacle API |
+| `PINNACLE_SPORT_ID` | `29` | Sport ID (29 = soccer) |
+| `PINNACLE_LOCALE` | `en_US` | Locale za Pinnacle odgovore |
+| `PINNACLE_LEAGUE_CODE` | `fifa-world-cup` | Liga za `odds/league` endpoint |
+| `PINNACLE_LEAGUE_IDS` | *(prazno)* | Comma-separated lista liga; kada je prazno, koristi `PINNACLE_LEAGUE_CODE` |
+| `PINNACLE_USE_LEAGUES_LOOKUP` | `false` | Ukljuci da server trazi ligu iz Pinnacle `leagues` feeda; ostavi `false` na Netlify jer `leagues` moze da vrati 403 |
+| `PINNACLE_ODDS_TYPE` | `1` | Tip kvota |
+| `PINNACLE_VERSION` | `0` | Version parametar |
+| `FEED_TIMEOUT_MS` | `4000` (lokalno) / `6000` (Netlify) | Timeout po feedu |
 
-- `PINNACLE_API_BASE` default `https://www.pinnacle888.com/sports-service/sv/euro`
-- `PINNACLE_SPORT_ID` default `29` za soccer
-- `PINNACLE_LOCALE` default `en_US`
-- `PINNACLE_LEAGUE_IDS` comma-separated lista liga; kada je prazno, server trazi World Cup ligu iz Pinnacle `leagues` feeda.
-- `PINNACLE_LEAGUE_CODE` default `fifa-world-cup` za `odds/league` endpoint.
-- `PINNACLE_USE_LEAGUES_LOOKUP` default `false`; na Netlify ostavi `false` jer Pinnacle `leagues` endpoint moze vratiti 403, dok direktni `odds/league` radi preko `PINNACLE_LEAGUE_CODE`.
-- `PINNACLE_ODDS_TYPE`, `PINNACLE_VERSION`, `PINNACLE_SPECIAL_VERSION` default `1`, `0`, `0`.
-- `FEED_TIMEOUT_MS` default `4000`; kratak timeout pomaze da Netlify Function vrati parcijalne podatke umesto 502 kada neki feed visi.
+### PS3838 (opcioni, za direktni Pinnacle API)
 
-## Golovi
-
-Prikaz golova prati Pinnacle liniju po mecu: prvo se koristi 2.5 ako Pinnacle ima over i under, a ako nema 2.5 pokusava se fallback na 3.5. Kladionice se porede samo na izabranoj liniji za taj mec.
-
-## No-vig kolona
-
-Prva kolona u tabeli je `Pinnacle no-vig`. Server uzima Pinnacle kvote i skida marginu Shin metodom za 1X2 i izabranu liniju golova. Ta kolona je referenca za bojenje kvota, nije kladionica i ne ulazi u racunanje najbolje kladionicarske kvote ili margine.
-
-Primer `.env`:
-
-```text
-PINNACLE_LEAGUE_CODE=fifa-world-cup
-```
+| Promenljiva | Default | Opis |
+|-------------|---------|------|
+| `PS3838_ENABLED` | `false` | Ukljuci PS3838 feed |
+| `PS3838_API_BASE` | `https://api.ps3838.com` | API base |
+| `PS3838_USERNAME` | — | API korisnik |
+| `PS3838_PASSWORD` | — | API lozinka |
+| `PS3838_SPORT_ID` | `29` | Sport ID |
+| `PS3838_LEAGUE_IDS` | — | Comma-separated lista liga |
+| `PS3838_ODDS_FORMAT` | `Decimal` | Format kvota |
 
 ## API
 
 ### `GET /api/health`
 
-Vraca osnovni status servera.
+Vraca osnovni status servera i broj kladionica.
 
-### `GET /api/odds`
+### `GET /api/odds?competition=<id>`
 
-Vraca normalizovane World Cup kvote, status feedova, najbolje kvote i value signale.
+Parametar `competition` je opcion (default: `world-cup`).
 
-## Kladionice
+Odgovor sadrzi:
 
-Aktivni normalizatori:
+| Polje | Opis |
+|-------|------|
+| `matches` | Lista meceva sa kvotama, best/margin, kickoff vreme |
+| `feeds` | Status svakog feeda (ok/error), broj meceva |
+| `unmatched` | Ponude koje nisu mogle biti uparene |
+| `opportunities` | Value bets (kvota iznad Pinnacle no-vig praga) |
+| `filter.fixtureSource` | Koja kladionica je bila master za listu meceva |
+| `filter.note` | Upozorenje ako Pinnacle nije bio dostupan |
 
-- Pinnacle
-- MerkurXtip
-- MaxBet
-- SoccerBet
-- Superbet
-- BalkanBet
+## No-vig kolona
+
+Prva kolona tabele (`Pinnacle no-vig`) prikazuje Pinnacle kvote ociscene od margine
+**Shin metodom**. Ona je referenca za bojenje vrednih kvota — nije kladionica i ne ulazi
+u racunanje `best` kolone ni margine.
+
+## Golovi
+
+Prikaz golova prati Pinnacle liniju po mecu:
+
+- Primarna linija: **2.5**
+- Fallback: **3.5** (ako Pinnacle nema 2.5 za taj mec)
+
+Kladionice se porede samo na liniji koju je Pinnacle odredio za taj mec.
+
+## Mnozenje kvota (Akumulator)
+
+Tab bira narednih X meceva i prikazuje:
+
+- **Leaderboard** — koja kladionica ima najveci product kvota
+- **Tabela legova** — svaki mec sa kvotama po kladionici, favorit i Pinnacle referenca
+
+Parametri u levom panelu:
+
+- **Broj meceva (X)**: 2–15
+- **Tip opklade**: Favorit (1X2) ili Over 2.5 (golovi)
+
+## Neuparene utakmice
+
+Tab **Neuparene** prikazuje ponude koje sistem nije uspeo da upari, grupisane po izvoru
+(kladionici). Broj neuparenih je vidljiv na tab badge-u bez otvaranja taba.
+
+Za svaki neuparen mec prikazuju se:
+
+- Timovi onako kako ih ta kladionica salje
+- Kickoff vreme
+- Razlog (`no-candidates`, `score-too-low`, `ambiguous`)
+- Najblizi kandidat i skor slicnosti
+
+### Dodavanje aliasa
+
+Kada se nepoznato ime pojavi u Neuparenim, dodaj ga u:
+
+```
+public/shared/team-aliases.js
+```
+
+To je jedini fajl koji treba menjati — alias logika ostaje u `teams.js`.
 
 ## Normalizacija imena timova
 
 Kladionice salju razlicite oblike istog imena (`Man Utd`, `Manchester Utd`, `Manchester United FC`).
-Spajanje ponuda radi `public/shared/teams.js`, koji koristi i server i browser, u cetiri sloja:
+Spajanje radi `public/shared/teams.js`, koji koriste i server i browser, u cetiri sloja:
 
-1. `canonicalizeTeam` - mala slova, skidanje dijakritika i interpunkcije.
-2. `ALIAS_ENTRIES` - rucna tabela za imena koja se ne mogu izvesti algoritmom
-   (egzonimi tipa `holandija` -> Netherlands).
-3. `teamTokens` - skidanje klupskih prefiksa (`FC`, `AFC`, `VfB`, godine tipa `04`)
-   i sirenje skracenica (`utd` -> `united`). Ovaj sloj pokriva vecinu varijanti.
-4. `teamSimilarity` - fuzzy poredjenje za ostatak.
+1. **`canonicalizeTeam`** — mala slova, skidanje dijakritika i interpunkcije
+2. **`TEAM_ALIASES`** — rucna tabela iz `team-aliases.js` za egzonime i nestandardne oblike
+3. **`teamTokens`** — skidanje klupskih prefiksa (`FC`, `AFC`, `VfB`, godine `04`)
+   i sirenje skracenica (`utd` → `united`, `man` → `manchester`, `spurs` → `tottenham`)
+4. **`teamSimilarity`** — fuzzy Jaccard poredjenje za ostatak
 
-Utakmica se spaja tek kada **oba** tima predju prag (`0.72`), i odbija se kada su dva
-kandidata preblizu (`margin 0.08`). Spajanje pogresnih meceva bi prikazalo tudje kvote
-u istom redu, sto je gore nego da reda nema.
+Utakmica se spaja tek kada **oba** tima predju prag (`0.72`) i odbija se kada su dva
+kandidata preblizu (margin `0.08`). Spajanje pogresnih meceva bi prikazalo tudje kvote
+u istom redu — sto je gore nego da reda nema.
 
-Kada oba imena postoje u tabeli a razlicita su, tretiraju se kao razliciti timovi.
-To je jedini nacin da se razdvoje `Guinea` / `Guinea-Bissau` od `Nottingham` / `Nottingham Forest` -
-strukturno su isti slucaj, pa rucna tabela mora da presudi.
+## Primarni izvor fixture liste
 
-Ponude koje se ne uparе vracaju se u `unmatched` polju `/api/odds` i prikazuju se
-ispod tabele, da bi imena koja nedostaju bila vidljiva umesto da tiho nestanu. Kada se
-tamo pojavi nepoznato ime, dodaj ga u `public/shared/team-aliases.js` - to je jedini
-fajl koji treba menjati za novi alias, odvojen od logike uparivanja u `teams.js`.
+Pinnacle je primarni `sourceOfTruth` — njegova lista meceva odredjuje koja se takmicenja
+prikazuju i kako se timovi zovu u tabeli.
+
+Kada Pinnacle nije dostupan, server automatski pada back na **BetInAsia (Oddsmath)** kao
+sekundarni izvor fixture liste (puna engleska imena timova). U tom slucaju frontend prikazuje:
+
+```
+⚠ Pinnacle nedostupan — lista meceva od BetInAsia.
+```
+
+## Promene kvota
+
+Svakih 30 sekundi se povlaci novi snapshot. Kada se kvota promeni za vise od zadatog praga
+(default 3%), prikazuje se modal sa listom promena i smerom kretanja (gore/dole).
+Prag se podesava klizacem **Promena kvote** u levom panelu.
+
+## Testovi
 
 ```bash
 npm test
 ```
 
-## Struktura
+## Struktura projekta
 
-```text
-server.js               Node HTTP server, proxy/fetch i normalizacija kvota
-netlify.toml            Netlify build, functions i API rewrite konfiguracija
-netlify/functions       Serverless API entrypoint za Netlify
-public/index.html       App shell
-public/app.js           Dashboard logika i renderovanje
-public/shared/teams.js         Uparivanje imena/meceva - logika (server + browser)
-public/shared/team-aliases.js  Rucna tabela aliasa - podaci, ovde se dodaju nova imena
-public/styles.css       UI stilovi
-test/                   node:test testovi
 ```
-
-## Sledeci koraci
-
-- Dodati market switch za pobednika SP i grupne faze.
-- Dodati cache sloj za feedove da se smanji broj spoljasnjih requestova.
-- Dodati debug endpoint za proveru sirovih bookmaker payloadova.
+server.js                         Node HTTP server, fetch i normalizacija kvota
+netlify.toml                      Netlify build, functions i API rewrite konfiguracija
+netlify/functions/odds.js         Serverless API entrypoint
+netlify/functions/health.js       Health check endpoint
+public/index.html                 App shell
+public/app.js                     Dashboard logika, renderovanje, state
+public/styles.css                 UI stilovi
+public/shared/teams.js            Uparivanje meceva — logika (server + browser)
+public/shared/team-aliases.js     Rucna tabela aliasa — ovde se dodaju nova imena
+test/                             node:test testovi
+```
