@@ -2389,7 +2389,9 @@ export async function getOddsPayload(competitionId) {
   const { matches, unmatched } = aggregateMatches(settled);
 
   competitionAvailabilityCache.set(competition.id, { hasOffers: matches.length > 0, checkedAt: Date.now() });
-  await refreshStaleCompetitionAvailability(competition.id);
+  refreshStaleCompetitionAvailability(competition.id).catch((err) => {
+    console.warn("Failed to background refresh competition availability:", err.message);
+  });
 
   // Determine which bookmaker was used as the fixture list master.
   const pinnacleResult = settled.find((r) => r.bookmaker.sourceOfTruth && r.status === "ok" && r.matches.length);
