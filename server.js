@@ -294,8 +294,7 @@ const NO_VIG_FALLBACK_BOOKMAKER = "betinasia";
 const DISPLAY_BOOKMAKERS = [PINNACLE_SHIN_BOOKMAKER, ...BOOKMAKERS];
 const FEED_BOOKMAKERS = BOOKMAKERS;
 
-const mozzartbetCache = new Map();
-const oddsmathCache = new Map();
+const feedCache = new Map();
 
 function getCacheEntry(cacheMap, key) {
   let entry = cacheMap.get(key);
@@ -304,6 +303,10 @@ function getCacheEntry(cacheMap, key) {
     cacheMap.set(key, entry);
   }
   return entry;
+}
+
+export function clearFeedCache() {
+  feedCache.clear();
 }
 
 const btfoddsCache = {
@@ -1469,43 +1472,7 @@ async function fetchMozzartbetMatches(bookmaker, competition, timeoutMs = FEED_T
 }
 
 
-async function getMozzartbetFeed(bookmaker, competition) {
-  const entry = getCacheEntry(mozzartbetCache, competition.id);
-  const now = Date.now();
-  if (entry.result && entry.expiresAt > now) {
-    return {
-      ...entry.result,
-      cached: true,
-      message: entry.result.message || "Using cached Mozzartbet feed.",
-    };
-  }
 
-  if (!entry.promise) {
-    entry.promise = fetchMozzartbetMatches(bookmaker, competition)
-      .then((result) => {
-        entry.result = result;
-        entry.expiresAt = Date.now() + 60000;
-        return result;
-      })
-      .catch((error) => {
-        const errorResult = {
-          bookmaker,
-          status: "error",
-          url: "https://www.mozzartbet.com/betting/matches",
-          matches: [],
-          message: error.message,
-        };
-        entry.result = errorResult;
-        entry.expiresAt = Date.now() + 180000; // Cache failures for 3 minutes to cool down
-        return errorResult;
-      })
-      .finally(() => {
-        entry.promise = null;
-      });
-  }
-
-  return entry.promise;
-}
 
 async function fetchOddsmathMatches(competition) {
   const leagueId = competition.oddsmathLeagueId;
@@ -1665,7 +1632,7 @@ function getOddsmathMatchesForBookmaker(bookmaker, allOddsmathMatches, competiti
 }
 
 async function getOddsmathFeed(bookmaker, competition) {
-  const entry = getCacheEntry(oddsmathCache, competition.id);
+  const entry = getCacheEntry(feedCache, `oddsmath:${competition.id}`);
   const now = Date.now();
   if (entry.result && entry.expiresAt > now) {
     const matches = getOddsmathMatchesForBookmaker(bookmaker, entry.result.matches, competition);
@@ -1719,7 +1686,7 @@ async function getOddsmathFeed(bookmaker, competition) {
   }
 }
 
-async function fetchBookmaker(bookmaker, competition) {
+async function fetchBookmakerUncached(bookmaker, competition) {
   if (bookmaker.type === "pinnacle") {
     let url = pinnacleLeagueOddsUrl(competition.pinnacleLeagueCode || PINNACLE_LEAGUE_CODE);
 
@@ -1846,22 +1813,7 @@ async function fetchBookmaker(bookmaker, competition) {
   }
 
   if (bookmaker.type === "mozzartbet") {
-    return getMozzartbetFeed(bookmaker, competition);
-  }
-
-  if (bookmaker.type === "oddsmath") {
-    return getOddsmathFeed(bookmaker, competition);
-  }
-
-
-  if (bookmaker.type !== "dualsoft") {
-    return {
-      bookmaker,
-      status: "configured",
-      url: bookmaker.baseUrl,
-      matches: [],
-      message: "Adapter endpoint configured; normalizer not enabled yet.",
-    };
+    return fetchMozzartbetMatches(bookmaker, competition);
   }
 
   return {
@@ -1871,6 +1823,52 @@ async function fetchBookmaker(bookmaker, competition) {
     matches: [],
     message: "Adapter endpoint configured; normalizer not enabled yet.",
   };
+}
+
+export async function fetchBookmaker(bookmaker, competition) {
+  if (bookmaker.type === "oddsmath") {
+    return getOddsmathFeed(bookmaker, competition);
+  }
+
+  const cacheKey = `${bookmaker.id}:${competition.id}`;
+  const entry = getCacheEntry(feedCache, cacheKey);
+  const now = Date.now();
+
+  if (entry.result && entry.expiresAt > now) {
+    return {
+      ...entry.result,
+      matches: Array.isArray(entry.result.matches) ? [...entry.result.matches] : [],
+      cached: true,
+      message: entry.result.message || `Using cached ${bookmaker.name} feed.`,
+    };
+  }
+
+  if (!entry.promise) {
+    entry.promise = fetchBookmakerUncached(bookmaker, competition)
+      .then((result) => {
+        entry.result = result;
+        const errorTtl = bookmaker.type === "mozzartbet" ? 180000 : 60000;
+        entry.expiresAt = Date.now() + (result.status === "error" ? errorTtl : 60000);
+        return result;
+      })
+      .catch((error) => {
+        const errorResult = {
+          bookmaker,
+          status: "error",
+          url: bookmaker.baseUrl || "",
+          matches: [],
+          message: error.message,
+        };
+        entry.result = errorResult;
+        entry.expiresAt = Date.now() + 60000;
+        return errorResult;
+      })
+      .finally(() => {
+        entry.promise = null;
+      });
+  }
+
+  return entry.promise;
 }
 
 function emptyBookmakerMap() {
