@@ -157,7 +157,7 @@ const COMPETITIONS = [
     id: "champions-league",
     label: "UEFA Champions League",
     terms: ["champions league", "liga šampiona", "liga sampiona", "ucl"],
-    pinnacleLeagueCode: "uefa-champions-league",
+    pinnacleLeagueCode: "205451",
     nsoftTournamentId: 12,
     superbetTournaments: ["142", "143", "94891"],
     oddsmathLeagueId: 1245,
