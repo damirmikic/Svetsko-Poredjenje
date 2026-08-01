@@ -157,12 +157,12 @@ const COMPETITIONS = [
     id: "champions-league",
     label: "UEFA Champions League",
     terms: ["champions league", "liga šampiona", "liga sampiona", "ucl"],
-    pinnacleLeagueCode: "205451",
+    pinnacleLeagueCode: "uefa-champions-league-qualifiers",
     nsoftTournamentId: 12,
     superbetTournaments: ["142", "143", "94891"],
     oddsmathLeagueId: 1245,
     dualsoftCountry: "Liga Šampiona",
-    dualsoftLeagueName: "Champions League",
+    dualsoftLeagueName: ["Champions League", "UEFA Champions League - Qual.", "UEFA Champions League"],
     mozzartCountryTerm: "champions",
     mozzartLeagueTerm: "league",
     btfTerms: ["champions league", "ucl"],
@@ -550,9 +550,12 @@ function matchesDualsoftCompetition(match, competition) {
     const token = String(match.leagueGroupToken || "");
     const name = String(match.leagueName || "").trim().toLocaleLowerCase("sr-RS");
     const womensJoined = [match.leagueName, match.leagueGroupToken, match.home, match.away].join(" ");
+    const allowedNames = Array.isArray(competition.dualsoftLeagueName)
+      ? competition.dualsoftLeagueName.map((n) => n.trim().toLocaleLowerCase("sr-RS"))
+      : [competition.dualsoftLeagueName.trim().toLocaleLowerCase("sr-RS")];
     return (
       token.includes(competition.dualsoftCountry) &&
-      name === competition.dualsoftLeagueName.toLocaleLowerCase("sr-RS") &&
+      allowedNames.includes(name) &&
       !textIncludesWomensCompetition(womensJoined)
     );
   }

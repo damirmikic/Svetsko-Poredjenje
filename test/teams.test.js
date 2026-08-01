@@ -62,6 +62,12 @@ test("resolves exonyms that no algorithm could derive", () => {
   assert.equal(normalizeTeamName("Korea Republic"), "South Korea");
   sameTeam("SAD", "United States");
   sameTeam("Turkiye", "Turska");
+  assert.equal(normalizeTeamName("Hapoel Be`er Sheva FC"), "Hapoel Beer Sheva");
+  assert.equal(normalizeTeamName("FK Crvena Zvezda Belgrade"), "Red Star Belgrade");
+  assert.equal(normalizeTeamName("Olympiacos Piraeus"), "Olympiakos Piraeus");
+  assert.equal(normalizeTeamName("Bodoe/Glimt"), "Bodo-Glimt");
+  assert.equal(normalizeTeamName("AGF Aarhus"), "AGF Aarhus");
+  assert.equal(normalizeTeamName("Sabah Masazir"), "Sabah Masazir");
 });
 
 test("leaves unknown names intact rather than mangling them", () => {

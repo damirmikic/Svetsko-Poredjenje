@@ -24,7 +24,7 @@ const pinnacleLeagueCodeByCompetition = {
   "ligue-1": "france-ligue-1",
   "serie-a": "italy-serie-a",
   laliga: "spain-la-liga",
-  "champions-league": "uefa-champions-league",
+  "champions-league": "uefa-champions-league-qualifiers",
   "europa-league": "uefa-europa-league",
   "conference-league": "uefa-conference-league",
 };
