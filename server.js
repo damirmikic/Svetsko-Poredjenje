@@ -1361,12 +1361,14 @@ function matchesMozzartCompetition(item, competition) {
   const joined = [competitionName, home, away].join(" ");
   if (textIncludesWomensCompetition(joined)) return false;
 
+  if (textIncludesTerms(joined, competition.terms || [])) return true;
+
   if (competition.mozzartCountryTerm && competition.mozzartLeagueTerm) {
     const lower = competitionName.toLocaleLowerCase("sr-RS");
     return lower.includes(competition.mozzartCountryTerm) && lower.includes(competition.mozzartLeagueTerm);
   }
 
-  return textIncludesTerms(joined, competition.terms);
+  return false;
 }
 
 async function fetchMozzartbetMatches(bookmaker, competition, timeoutMs = FEED_TIMEOUT_MS) {
