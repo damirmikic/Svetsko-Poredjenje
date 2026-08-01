@@ -161,8 +161,17 @@ const COMPETITIONS = [
     nsoftTournamentId: 12,
     superbetTournaments: ["142", "143", "94891"],
     oddsmathLeagueId: 1245,
-    dualsoftCountry: "Liga Šampiona",
-    dualsoftLeagueName: ["Champions League", "UEFA Champions League - Qual.", "UEFA Champions League"],
+    dualsoftCountry: ["Liga Šampiona", "Liga Sampiona", "Champions League"],
+    dualsoftLeagueName: [
+      "Champions League",
+      "UEFA Champions League - Qual.",
+      "UEFA Champions League",
+      "Liga Šampiona",
+      "Liga Sampiona",
+      "UEFA Liga Šampiona",
+      "Liga Šampiona - Kvalifikacije",
+      "Liga Šampiona (Kval.)",
+    ],
     mozzartCountryTerm: "champions",
     mozzartLeagueTerm: "league",
     btfTerms: ["champions league", "ucl"],
@@ -171,12 +180,22 @@ const COMPETITIONS = [
     id: "europa-league",
     label: "UEFA Europa League",
     terms: ["europa league", "liga evrope", "evropa liga", "liga europe", "uel"],
-    pinnacleLeagueCode: "uefa-europa-league",
+    pinnacleLeagueCode: ["uefa-europa-league-qualifiers", "uefa-europa-league"],
     nsoftTournamentId: 13,
     superbetTournaments: ["144", "145"],
     oddsmathLeagueId: 1247,
-    dualsoftCountry: "Europa League",
-    dualsoftLeagueName: "Europa League",
+    dualsoftCountry: ["Europa League", "Liga Evrope", "Liga Europe", "Evropa"],
+    dualsoftLeagueName: [
+      "Europa League",
+      "UEFA Europa League - Qual.",
+      "UEFA Europa League",
+      "Liga Evrope",
+      "UEFA Liga Evrope",
+      "Liga Evrope - Kvalifikacije",
+      "Liga Evrope (Kval.)",
+      "Liga Europe",
+      "UEFA Liga Europe",
+    ],
     mozzartCountryTerm: "europa",
     mozzartLeagueTerm: "league",
     btfTerms: ["europa league", "uel"],
@@ -185,12 +204,20 @@ const COMPETITIONS = [
     id: "conference-league",
     label: "UEFA Conference League",
     terms: ["conference league", "konferencija", "liga konferencija", "uecl"],
-    pinnacleLeagueCode: "uefa-conference-league",
+    pinnacleLeagueCode: ["uefa-conference-league-qualifiers", "uefa-conference-league"],
     nsoftTournamentId: 14,
     superbetTournaments: ["32382", "48093"],
     oddsmathLeagueId: 93052,
-    dualsoftCountry: "Conference League",
-    dualsoftLeagueName: "Conference League",
+    dualsoftCountry: ["Conference League", "Liga Konferencija", "Konferencija"],
+    dualsoftLeagueName: [
+      "Conference League",
+      "UEFA Conference League - Qual.",
+      "UEFA Conference League",
+      "Liga Konferencija",
+      "UEFA Liga Konferencija",
+      "Liga Konferencija - Kvalifikacije",
+      "Liga Konferencija (Kval.)",
+    ],
     mozzartCountryTerm: "conference",
     mozzartLeagueTerm: "league",
     btfTerms: ["conference league", "uecl"],
@@ -547,17 +574,30 @@ function matchesCompetitionTerms(match, competition) {
 
 function matchesDualsoftCompetition(match, competition) {
   if (competition.dualsoftCountry && competition.dualsoftLeagueName) {
-    const token = String(match.leagueGroupToken || "");
+    const token = String(match.leagueGroupToken || "").toLocaleLowerCase("sr-RS");
     const name = String(match.leagueName || "").trim().toLocaleLowerCase("sr-RS");
     const womensJoined = [match.leagueName, match.leagueGroupToken, match.home, match.away].join(" ");
+    if (textIncludesWomensCompetition(womensJoined)) return false;
+
+    const allowedCountries = Array.isArray(competition.dualsoftCountry)
+      ? competition.dualsoftCountry.map((c) => c.trim().toLocaleLowerCase("sr-RS"))
+      : [competition.dualsoftCountry.trim().toLocaleLowerCase("sr-RS")];
+
     const allowedNames = Array.isArray(competition.dualsoftLeagueName)
       ? competition.dualsoftLeagueName.map((n) => n.trim().toLocaleLowerCase("sr-RS"))
       : [competition.dualsoftLeagueName.trim().toLocaleLowerCase("sr-RS")];
-    return (
-      token.includes(competition.dualsoftCountry) &&
-      allowedNames.includes(name) &&
-      !textIncludesWomensCompetition(womensJoined)
-    );
+
+    const matchesCountry = allowedCountries.some((country) => token.includes(country));
+    const matchesName = allowedNames.includes(name);
+
+    if (matchesCountry && matchesName) return true;
+
+    // Fallback: if general competition terms match (and not women's), accept it
+    if (competition.terms?.length && matchesCompetitionTerms(match, competition)) {
+      return true;
+    }
+
+    return false;
   }
   return matchesCompetitionTerms(match, competition);
 }
@@ -1194,10 +1234,14 @@ async function fetchPinnacleJson(url) {
 
 function getPinnacleCompetitionLeagueIds(leaguesPayload, competition) {
   if (PINNACLE_LEAGUE_IDS.length) return PINNACLE_LEAGUE_IDS;
+  const targetCodes = Array.isArray(competition.pinnacleLeagueCode)
+    ? competition.pinnacleLeagueCode
+    : [competition.pinnacleLeagueCode].filter(Boolean);
+
   return getPinnacleLeagues(leaguesPayload)
     .filter(
       (league) =>
-        String(league.leagueCode) === competition.pinnacleLeagueCode ||
+        targetCodes.includes(String(league.leagueCode)) ||
         textIncludesTerms([league.name, league.englishName, league.leagueCode].join(" "), competition.terms || []),
     )
     .map((league) => String(league.id))
@@ -1691,7 +1735,10 @@ async function getOddsmathFeed(bookmaker, competition) {
 
 async function fetchBookmakerUncached(bookmaker, competition) {
   if (bookmaker.type === "pinnacle") {
-    let url = pinnacleLeagueOddsUrl(competition.pinnacleLeagueCode || PINNACLE_LEAGUE_CODE);
+    const primaryCode = Array.isArray(competition.pinnacleLeagueCode)
+      ? competition.pinnacleLeagueCode[0]
+      : competition.pinnacleLeagueCode;
+    let url = pinnacleLeagueOddsUrl(primaryCode || PINNACLE_LEAGUE_CODE);
 
     try {
       if (PINNACLE_USE_LEAGUES_LOOKUP) {
@@ -1714,7 +1761,7 @@ async function fetchBookmakerUncached(bookmaker, competition) {
           };
         }
 
-        url = pinnacleLeagueOddsUrl(matchedLeague?.leagueCode || competition.pinnacleLeagueCode || PINNACLE_LEAGUE_CODE);
+        url = pinnacleLeagueOddsUrl(matchedLeague?.leagueCode || primaryCode || PINNACLE_LEAGUE_CODE);
       }
 
       const oddsPayload = await fetchPinnacleJson(url);

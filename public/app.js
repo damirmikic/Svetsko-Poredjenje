@@ -25,8 +25,8 @@ const pinnacleLeagueCodeByCompetition = {
   "serie-a": "italy-serie-a",
   laliga: "spain-la-liga",
   "champions-league": "uefa-champions-league-qualifiers",
-  "europa-league": "uefa-europa-league",
-  "conference-league": "uefa-conference-league",
+  "europa-league": "uefa-europa-league-qualifiers",
+  "conference-league": "uefa-conference-league-qualifiers",
 };
 const matchWinnerOutcomes = ["home", "draw", "away"];
 const totalGoalsOutcomes = ["over25", "under25"];
