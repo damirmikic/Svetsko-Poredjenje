@@ -758,7 +758,8 @@ select,
     overflow: visible;
   }
 
-  .accumulator-view {
+  .accumulator-view,
+  .unmatched-view {
     max-height: none;
     overflow-y: visible;
   }
@@ -1636,7 +1637,10 @@ select,
 
 /* â”€â”€ Unmatched full-screen view â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 .unmatched-view {
-  padding: 16px 0 40px;
+  padding: 16px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 
 .uv-header {
