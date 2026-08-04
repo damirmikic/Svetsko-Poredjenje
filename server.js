@@ -1760,9 +1760,10 @@ async function getOddsmathFeed(bookmaker, competition) {
 
 async function fetchBookmakerUncached(bookmaker, competition) {
   if (bookmaker.type === "pinnacle") {
-    const primaryCode = Array.isArray(competition.pinnacleLeagueCode)
-      ? competition.pinnacleLeagueCode[0]
-      : competition.pinnacleLeagueCode;
+    const codes = Array.isArray(competition.pinnacleLeagueCode)
+      ? competition.pinnacleLeagueCode
+      : [competition.pinnacleLeagueCode].filter(Boolean);
+    const primaryCode = codes[0];
     let url = pinnacleLeagueOddsUrl(primaryCode || PINNACLE_LEAGUE_CODE);
 
     try {
@@ -1789,15 +1790,29 @@ async function fetchBookmakerUncached(bookmaker, competition) {
         url = pinnacleLeagueOddsUrl(matchedLeague?.leagueCode || primaryCode || PINNACLE_LEAGUE_CODE);
       }
 
-      const oddsPayload = await fetchPinnacleJson(url);
-      const matches = normalizePinnacleMatches(bookmaker, oddsPayload, oddsPayload, competition);
+      // Some competitions (Champions/Europa/Conference League) span two Pinnacle
+      // league codes at once - qualifiers and the main tournament. Fixtures move
+      // from one to the other as the tournament progresses, so both must be
+      // fetched or matches silently lose their Pinnacle reference mid-season.
+      const urls = PINNACLE_USE_LEAGUES_LOOKUP ? [url] : codes.map((code) => pinnacleLeagueOddsUrl(code));
+      const payloads = await Promise.all(urls.map((oddsUrl) => fetchPinnacleJson(oddsUrl)));
+      const seenEventIds = new Set();
+      const matches = payloads.flatMap((oddsPayload) =>
+        normalizePinnacleMatches(bookmaker, oddsPayload, oddsPayload, competition).filter((match) => {
+          if (!match.externalId) return true;
+          if (seenEventIds.has(match.externalId)) return false;
+          seenEventIds.add(match.externalId);
+          return true;
+        }),
+      );
+
       return {
         bookmaker,
         status: "ok",
-        url,
+        url: urls.join(", "),
         matches,
         fetchedAt: Date.now(),
-        totalMatches: getPinnacleEvents(oddsPayload).length,
+        totalMatches: payloads.reduce((sum, oddsPayload) => sum + getPinnacleEvents(oddsPayload).length, 0),
       };
     } catch (error) {
       return {
