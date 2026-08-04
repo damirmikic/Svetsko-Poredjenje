@@ -16,7 +16,7 @@ const primaryReferenceBookmaker = "pinnacle_shin";
 const fallbackReferenceBookmaker = "pinnacle";
 const pinnacleBrowserBase = "https://www.pinnacle888.com/sports-service/sv/euro";
 const pinnacleBrowserSportId = 29;
-const defaultCompetitionId = "world-cup";
+const defaultCompetitionId = "epl";
 const pinnacleLeagueCodeByCompetition = {
   "world-cup": "fifa-world-cup",
   epl: "england-premier-league",

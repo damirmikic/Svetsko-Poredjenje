@@ -79,6 +79,7 @@ const COMPETITIONS = [
   {
     id: "world-cup",
     label: "World Cup 2026",
+    hidden: true,
     terms: WORLD_CUP_TERMS,
     pinnacleLeagueCode: "fifa-world-cup",
     nsoftTournamentId: 30,
@@ -95,11 +96,11 @@ const COMPETITIONS = [
     nsoftTournamentId: 33,
     superbetTournaments: ["106"],
     oddsmathLeagueId: 1281,
-    dualsoftCountry: "England",
-    dualsoftLeagueName: "Premier League",
+    dualsoftCountry: ["England", "Engleska"],
+    dualsoftLeagueName: ["Premier League", "Premijer Liga", "England 1", "Engleska 1"],
     mozzartCountryTerm: "england",
-    mozzartLeagueTerm: "premier league",
-    btfTerms: ["premier league"],
+    mozzartLeagueTerm: "premier",
+    btfTerms: ["premier league", "premijer liga"],
   },
   {
     id: "bundesliga",
@@ -224,7 +225,7 @@ const COMPETITIONS = [
   },
 ];
 
-const DEFAULT_COMPETITION_ID = "world-cup";
+const DEFAULT_COMPETITION_ID = "epl";
 
 function getCompetitionById(id) {
   return COMPETITIONS.find((competition) => competition.id === id) || COMPETITIONS.find((competition) => competition.id === DEFAULT_COMPETITION_ID);
@@ -2456,7 +2457,7 @@ export async function getOddsPayload(competitionId) {
     generatedAt: Date.now(),
     elapsedMs: Date.now() - startedAt,
     activeCompetitionId: competition.id,
-    competitions: COMPETITIONS.map(({ id, label }) => ({
+    competitions: COMPETITIONS.filter(c => !c.hidden).map(({ id, label }) => ({
       id,
       label,
       hasOffers: competitionAvailabilityCache.get(id)?.hasOffers ?? true,
