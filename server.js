@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
+import { getStore } from "@netlify/blobs";
 
 import {
   createMatchKey,
@@ -353,6 +354,44 @@ function getCacheEntry(cacheMap, key) {
 
 export function clearFeedCache() {
   feedCache.clear();
+}
+
+// The in-memory feedCache above only survives within one warm Lambda
+// container. Netlify's free tier doesn't keep containers warm reliably under
+// light/bursty traffic, so in production that cache was effectively missing
+// on most requests - every tab switch, even a repeat one, ran a full cold
+// fetch against every bookmaker. Netlify Blobs gives a small persistent
+// key-value store shared across invocations/containers to close that gap.
+// It only exists in the Netlify runtime, so it's a no-op locally (standalone
+// `node server.js` keeps relying on feedCache alone, same as before).
+let blobStore = null;
+if (IS_NETLIFY) {
+  try {
+    blobStore = getStore("feed-cache");
+  } catch (error) {
+    console.warn("Netlify Blobs unavailable, falling back to in-memory cache only:", error.message);
+  }
+}
+
+async function readSharedCache(key) {
+  if (!blobStore) return null;
+  try {
+    const entry = await blobStore.get(key, { type: "json" });
+    if (!entry || entry.expiresAt <= Date.now()) return null;
+    return entry.result;
+  } catch (error) {
+    console.warn(`Blobs read failed for ${key}:`, error.message);
+    return null;
+  }
+}
+
+async function writeSharedCache(key, result, ttlMs) {
+  if (!blobStore) return;
+  try {
+    await blobStore.setJSON(key, { result, expiresAt: Date.now() + ttlMs });
+  } catch (error) {
+    console.warn(`Blobs write failed for ${key}:`, error.message);
+  }
 }
 
 const btfoddsCache = {
@@ -1707,7 +1746,8 @@ function getOddsmathMatchesForBookmaker(bookmaker, allOddsmathMatches, competiti
 }
 
 async function getOddsmathFeed(bookmaker, competition) {
-  const entry = getCacheEntry(feedCache, `oddsmath:${competition.id}`);
+  const sharedKey = `oddsmath:${competition.id}`;
+  const entry = getCacheEntry(feedCache, sharedKey);
   const now = Date.now();
   if (entry.result && entry.expiresAt > now) {
     const matches = getOddsmathMatchesForBookmaker(bookmaker, entry.result.matches, competition);
@@ -1724,10 +1764,28 @@ async function getOddsmathFeed(bookmaker, competition) {
   }
 
   if (!entry.promise) {
+    const shared = await readSharedCache(sharedKey);
+    if (shared) {
+      entry.result = shared;
+      entry.expiresAt = Date.now() + 25000;
+      const matches = getOddsmathMatchesForBookmaker(bookmaker, shared.matches, competition);
+      return {
+        bookmaker,
+        status: "ok",
+        url: shared.url,
+        matches,
+        fetchedAt: shared.fetchedAt,
+        totalMatches: shared.totalMatches,
+        cached: true,
+        message: "Using cached Oddsmath feed.",
+      };
+    }
+
     entry.promise = fetchOddsmathMatches(competition)
       .then((result) => {
         entry.result = result;
         entry.expiresAt = Date.now() + 25000;
+        writeSharedCache(sharedKey, result, 25000);
         return result;
       })
       .catch((error) => {
@@ -1967,11 +2025,27 @@ export async function fetchBookmaker(bookmaker, competition) {
   }
 
   if (!entry.promise) {
+    const shared = await readSharedCache(cacheKey);
+    if (shared) {
+      entry.result = shared;
+      entry.expiresAt = Date.now() + 25000;
+      return {
+        ...shared,
+        matches: Array.isArray(shared.matches) ? [...shared.matches] : [],
+        cached: true,
+        message: shared.message || `Using cached ${bookmaker.name} feed.`,
+      };
+    }
+
     entry.promise = fetchBookmakerUncached(bookmaker, competition)
       .then((result) => {
         entry.result = result;
         const errorTtl = bookmaker.type === "mozzartbet" ? 180000 : 60000;
         entry.expiresAt = Date.now() + (result.status === "error" ? errorTtl : 25000);
+        // Only successful results go to the shared cache - an error here is
+        // often container/network-specific, and writing it would poison
+        // every other invocation's view of this feed for the error TTL.
+        if (result.status !== "error") writeSharedCache(cacheKey, result, 25000);
         return result;
       })
       .catch((error) => {

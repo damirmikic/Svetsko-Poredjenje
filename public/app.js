@@ -468,14 +468,21 @@ async function loadOdds() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     state.data = await response.json();
     if (!state.competitionId) state.competitionId = state.data.activeCompetitionId;
-    try {
-      await hydratePinnacleFromBrowser();
-    } catch (error) {
-      console.warn("Pinnacle browser fallback failed:", error);
-    }
     trackChangedOdds(previousSnapshot, collectOddsSnapshot(state.data));
     render();
     checkOutrightAlert();
+    // Not awaited: the server-side Pinnacle fetch normally succeeds now (via
+    // the relay), so this fallback rarely has anything to do. Blocking the
+    // first paint on an extra browser->Pinnacle round trip made every tab
+    // switch feel slow even when it ended up being a no-op. Re-render only
+    // if it actually patched something in.
+    hydratePinnacleFromBrowser()
+      .then((patched) => {
+        if (patched) render();
+      })
+      .catch((error) => {
+        console.warn("Pinnacle browser fallback failed:", error);
+      });
   } catch (error) {
     els.resultNote.textContent = `Greska pri ucitavanju: ${error.message}`;
   } finally {
@@ -1042,7 +1049,9 @@ function normalizePinnacleOffer(event) {
 }
 
 async function hydratePinnacleFromBrowser() {
-  const pinnacleFeed = state.data?.feeds?.find((feed) => feed.bookmakerId === "pinnacle");
+  const requestData = state.data;
+  const requestCompetitionId = state.competitionId;
+  const pinnacleFeed = requestData?.feeds?.find((feed) => feed.bookmakerId === "pinnacle");
 
   // Per-match, not "does any match anywhere have data": the patch loop below
   // fixes up whichever matches the browser fetch covers, so skipping the
@@ -1054,8 +1063,8 @@ async function hydratePinnacleFromBrowser() {
   const isPinnacleComplete = (match) =>
     matchWinnerOutcomes.every((outcome) => isValidOdd(match.bookmakers?.pinnacle?.odds?.[outcome])) &&
     hasCompleteTotals(match.bookmakers?.pinnacle?.totals25);
-  const needsHydration = (state.data?.matches || []).some((match) => !isPinnacleComplete(match));
-  if (!state.data || !needsHydration) return;
+  const needsHydration = (requestData?.matches || []).some((match) => !isPinnacleComplete(match));
+  if (!requestData || !needsHydration) return false;
 
   const params = new URLSearchParams({
     sportId: String(pinnacleBrowserSportId),
@@ -1064,7 +1073,7 @@ async function hydratePinnacleFromBrowser() {
     timeStamp: String(Date.now()),
     periodNum: "-1",
     eSportCode: "",
-    leagueCode: pinnacleLeagueCodeByCompetition[state.competitionId] || pinnacleLeagueCodeByCompetition[defaultCompetitionId],
+    leagueCode: pinnacleLeagueCodeByCompetition[requestCompetitionId] || pinnacleLeagueCodeByCompetition[defaultCompetitionId],
     isHlE: "true",
     isLive: "false",
     eventType: "0",
@@ -1076,12 +1085,18 @@ async function hydratePinnacleFromBrowser() {
   const response = await fetch(`${pinnacleBrowserBase}/odds/league?${params.toString()}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`Pinnacle browser fetch HTTP ${response.status}`);
   const payload = await response.json();
+
+  // This runs unawaited after render() now, so a fast follow-up tab switch
+  // can replace state.data before this response lands - patching a payload
+  // nobody is looking at anymore would show the wrong competition's odds.
+  if (state.data !== requestData) return false;
+
   const offers = new Map(getPinnacleEvents(payload).map((event) => {
     const offer = normalizePinnacleOffer(event);
     return [offer.matchKey, offer];
   }));
 
-  for (const match of state.data.matches || []) {
+  for (const match of requestData.matches || []) {
     const offer = offers.get(match.matchKey);
     if (!offer) continue;
     match.bookmakers.pinnacle = {
@@ -1108,11 +1123,13 @@ async function hydratePinnacleFromBrowser() {
     pinnacleFeed.status = "ok";
     pinnacleFeed.message = "Loaded in browser fallback.";
     pinnacleFeed.worldCupMatches = offers.size;
-    pinnacleFeed.matchedMatches = state.data.matches.filter((match) =>
+    pinnacleFeed.matchedMatches = requestData.matches.filter((match) =>
       matchWinnerOutcomes.some((outcome) => isValidOdd(match.bookmakers?.pinnacle?.odds?.[outcome])) ||
       hasCompleteTotals(match.bookmakers?.pinnacle?.totals25),
     ).length;
   }
+
+  return true;
 }
 
 function lowestMarketOdd(match, bookmakerIds, outcome) {
