@@ -1918,9 +1918,39 @@ async function fetchBookmakerUncached(bookmaker, competition) {
   };
 }
 
+// Hard ceiling on top of whatever the feed's own fetch/retry timeouts add up
+// to (MaxBet alone can be 3 attempts x 15s = 45s). Netlify kills the whole
+// function at its own 26s limit regardless of what's still in flight, and a
+// forced kill mid-fetch is what has been surfacing as NodeJsExit crashes.
+// Racing every feed against this means Promise.all in getOddsPayload always
+// resolves well inside that window instead of the platform doing it for us.
+const FEED_HARD_TIMEOUT_MS = 12000;
+
+async function withHardTimeout(promise, bookmaker) {
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(
+      () =>
+        resolve({
+          bookmaker,
+          status: "error",
+          url: bookmaker.baseUrl || "",
+          matches: [],
+          message: `Feed exceeded ${FEED_HARD_TIMEOUT_MS} ms hard timeout.`,
+        }),
+      FEED_HARD_TIMEOUT_MS,
+    );
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function fetchBookmaker(bookmaker, competition) {
   if (bookmaker.type === "oddsmath") {
-    return getOddsmathFeed(bookmaker, competition);
+    return withHardTimeout(getOddsmathFeed(bookmaker, competition), bookmaker);
   }
 
   const cacheKey = `${bookmaker.id}:${competition.id}`;
@@ -1961,7 +1991,10 @@ export async function fetchBookmaker(bookmaker, competition) {
       });
   }
 
-  return entry.promise;
+  // The underlying fetch keeps running (and still populates the cache) even
+  // if this particular caller times out here - only the response to this
+  // caller is bounded, not the shared in-flight request.
+  return withHardTimeout(entry.promise, bookmaker);
 }
 
 function emptyBookmakerMap() {
