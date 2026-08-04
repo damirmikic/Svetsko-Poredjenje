@@ -298,4 +298,12 @@ export const TEAM_ALIAS_ENTRIES = [
   ["hapoel ta", "Hapoel Tel Aviv"],
   ["hapoel t.a.", "Hapoel Tel Aviv"],
   ["h. tel aviv", "Hapoel Tel Aviv"],
+  ["ararat-arm.", "Ararat Armenia"],
+  ["c.zvezda", "Red Star Belgrade"],
+  ["c zvezda", "Red Star Belgrade"],
+  ["din. zagreb", "Dinamo Zagreb"],
+  ["din zagreb", "Dinamo Zagreb"],
+  ["sparta p.", "Sparta Prague"],
+  ["sparta p", "Sparta Prague"],
+  ["royale union sg", "Union Saint-Gilloise"],
 ];
