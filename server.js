@@ -37,6 +37,7 @@ const PINNACLE_LEAGUE_CODE = process.env.PINNACLE_LEAGUE_CODE || "fifa-world-cup
 const PINNACLE_USE_LEAGUES_LOOKUP = process.env.PINNACLE_USE_LEAGUES_LOOKUP === "true";
 const PINNACLE_PERIOD_NUM = process.env.PINNACLE_PERIOD_NUM || "-1";
 const PINNACLE_EVENT_TYPE = process.env.PINNACLE_EVENT_TYPE || "0";
+const PINNACLE_RELAY_TOKEN = process.env.PINNACLE_RELAY_TOKEN || "";
 const SUPERBET_WORLD_CUP_TOURNAMENTS = [
   "1431",
   "1432",
@@ -1233,6 +1234,10 @@ function pinnacleHeaders() {
     referer: "https://www.pinnacle888.com/",
     "user-agent":
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    // Only meaningful when PINNACLE_API_BASE points at pinnacle-relay (see
+    // ../pinnacle-relay) instead of pinnacle888.com directly; the relay
+    // checks this to avoid being an open proxy for anyone who finds its URL.
+    ...(PINNACLE_RELAY_TOKEN ? { "x-relay-token": PINNACLE_RELAY_TOKEN } : {}),
   };
 }
 
