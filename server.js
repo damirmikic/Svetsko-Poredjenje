@@ -90,6 +90,11 @@ const COMPETITIONS = [
     btfTerms: ["world cup"],
   },
   {
+    id: "today-matches",
+    label: "Danasnji mecevi",
+    virtual: true,
+  },
+  {
     id: "epl",
     label: "England - Premier League",
     terms: ["premier league", "premijer liga", "england 1", "engleska 1"],
@@ -2453,6 +2458,7 @@ function resolveDefaultCompetitionId() {
 }
 
 export async function getOddsPayload(competitionId) {
+  if (competitionId === "today-matches") return getTodayMatchesPayload();
   const competition = getCompetitionById(competitionId || resolveDefaultCompetitionId());
   const startedAt = Date.now();
   const settled = await Promise.all(FEED_BOOKMAKERS.map((bookmaker) => fetchBookmaker(bookmaker, competition)));
@@ -2526,9 +2532,72 @@ export function getHealthPayload() {
   return { ok: true, bookmakers: DISPLAY_BOOKMAKERS.length };
 }
 
+const TODAY_COMPETITION_IDS = [
+  "epl", "bundesliga", "ligue-1", "serie-a", "laliga",
+  "champions-league", "europa-league", "conference-league",
+];
+
+async function getTodayMatchesPayload() {
+  const startedAt = Date.now();
+
+  const dayStart = new Date();
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  dayEnd.setHours(7, 0, 0, 0);
+  const startMs = dayStart.getTime();
+  const endMs = dayEnd.getTime();
+
+  const results = await Promise.all(
+    TODAY_COMPETITION_IDS.map((id) =>
+      getOddsPayload(id).catch((err) => ({ matches: [], feeds: [], bookmakers: [], unmatched: [], error: err.message })),
+    ),
+  );
+
+  const todayMatches = results
+    .flatMap((r) =>
+      (r.matches || []).filter((m) => {
+        const t = Number(m.kickOffTime);
+        return Number.isFinite(t) && t >= startMs && t < endMs;
+      }),
+    )
+    .sort((a, b) => Number(a.kickOffTime) - Number(b.kickOffTime));
+
+  const firstResult = results.find((r) => r.bookmakers?.length) || results[0];
+
+  return {
+    generatedAt: Date.now(),
+    elapsedMs: Date.now() - startedAt,
+    activeCompetitionId: "today-matches",
+    competitions: COMPETITIONS.filter((c) => !c.hidden).map(({ id, label }) => ({
+      id,
+      label,
+      hasOffers: competitionAvailabilityCache.get(id)?.hasOffers ?? true,
+    })),
+    bookmakers: firstResult?.bookmakers || DISPLAY_BOOKMAKERS.map(({ id, name, type, baseUrl, isReference }) => ({ id, name, type, baseUrl, isReference: Boolean(isReference) })),
+    feeds: results.flatMap((r) => r.feeds || []),
+    matches: todayMatches,
+    unmatched: results.flatMap((r) => r.unmatched || []),
+    opportunities: buildOpportunities(todayMatches),
+    filter: {
+      sport: "football",
+      competition: "Danasnji mecevi",
+      terms: [],
+      fixtureSource: null,
+      note: todayMatches.length === 0
+        ? "Nema danasnjih meceva u izabranim takmicenjima (Top 5 liga + UEFA)."
+        : null,
+    },
+  };
+}
+
 async function handleOdds(req, res) {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const competitionId = url.searchParams.get("competition") || undefined;
+  if (competitionId === "today-matches") {
+    sendJson(res, 200, await getTodayMatchesPayload());
+    return;
+  }
   sendJson(res, 200, await getOddsPayload(competitionId));
 }
 

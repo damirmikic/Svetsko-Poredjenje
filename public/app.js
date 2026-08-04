@@ -501,7 +501,7 @@ function refreshOddsOnTimer() {
 }
 
 function renderCompetitionTabs() {
-  const competitions = state.data?.competitions || [{ id: defaultCompetitionId, label: "World Cup 2026", hasOffers: true }];
+  const competitions = state.data?.competitions || [{ id: defaultCompetitionId, label: "England - Premier League", hasOffers: true }];
 
   if (state.data && state.competitionId && !competitions.some((competition) => competition.id === state.competitionId)) {
     state.competitionId = null;
@@ -509,14 +509,22 @@ function renderCompetitionTabs() {
     return;
   }
 
+  const todayOption = competitions.find((c) => c.id === "today-matches");
+  const regularOptions = competitions.filter((c) => c.id !== "today-matches");
+
   els.competitionTabs.innerHTML = `
     <div class="competition-dropdown-container">
       <select class="competition-select" aria-label="Izaberi takmičenje">
-        ${competitions
-          .map(
-            (c) => `<option value="${c.id}" ${c.id === state.competitionId ? "selected" : ""}>${c.label}</option>`,
-          )
+        ${todayOption ? `
+          <optgroup label="— Brzi pregled —">
+            <option value="${todayOption.id}" ${todayOption.id === state.competitionId ? "selected" : ""}>${todayOption.label}</option>
+          </optgroup>
+          <optgroup label="— Takmičenja —">
+        ` : ""}
+        ${regularOptions
+          .map((c) => `<option value="${c.id}" ${c.id === state.competitionId ? "selected" : ""}>${c.label}</option>`)
           .join("")}
+        ${todayOption ? `</optgroup>` : ""}
       </select>
       <span class="competition-dropdown-arrow">▼</span>
     </div>
@@ -565,7 +573,6 @@ function visibleMatches() {
   const now = Date.now();
   return matches.filter((match) => {
     if (match.kickOffTime && Number(match.kickOffTime) < now) return false;
-    if (state.view === "today" && !isTodayMatch(match)) return false;
     if (state.view === "qualify") {
       const hasQualify = Object.values(match.bookmakers || {}).some(
         (e) => isValidOdd(e.qualifyOdds?.home) || isValidOdd(e.qualifyOdds?.away),
@@ -583,17 +590,17 @@ function renderView() {
     button.classList.toggle("active", button.dataset.view === state.view);
   });
 
-  const competitionLabel = state.data?.filter?.competition || "World Cup 2026";
+  const isToday = state.competitionId === "today-matches";
+  const competitionLabel = isToday ? "Danasnji mecevi" : (state.data?.filter?.competition || "World Cup 2026");
   const titles = {
-    all: `${competitionLabel} - 1X2 kvote`,
-    today: "Danasnji mecevi - 1X2 i golovi 2.5",
+    all: isToday ? "Danasnji mecevi - 1X2 i golovi 2.5" : `${competitionLabel} - 1X2 kvote`,
     goals: `${competitionLabel} - Golovi 2.5`,
     qualify: `${competitionLabel} - Ide dalje (nokaut faza)`,
     accumulator: "Množenje kvota na favorite za naredne mečeve",
     unmatched: "Neuparene utakmice po izvoru",
   };
   els.tableTitle.textContent = titles[state.view] || titles.all;
-  els.oddsTable.classList.toggle("is-today", state.view === "today");
+  els.oddsTable.classList.toggle("is-today", isToday);
 
   const isAcc = state.view === "accumulator";
   const isUnmatched = state.view === "unmatched";
@@ -613,7 +620,7 @@ function renderView() {
 function activeOutcomes() {
   if (state.view === "goals") return totalGoalsOutcomes;
   if (state.view === "qualify") return qualifyOutcomes;
-  return state.view === "today" ? todayOutcomes : matchWinnerOutcomes;
+  return state.competitionId === "today-matches" ? todayOutcomes : matchWinnerOutcomes;
 }
 
 function outcomeValue(entry, outcome) {
@@ -1291,10 +1298,10 @@ function renderRows(matches) {
 
   if (!matches.length) {
     const emptyMessage =
-      state.view === "today"
+      state.competitionId === "today-matches"
         ? {
             title: "Nema danasnjih meceva u aktivnim feedovima.",
-            text: "Filter obuhvata meceve od danas u 00:00 do sutra u 07:00.",
+            text: "Filter obuhvata meceve od danas u 00:00 do sutra u 07:00 (Top 5 liga + UEFA).",
           }
         : {
             title: `Nema ${state.data?.filter?.competition || "World Cup"} meceva u aktivnim feedovima.`,
@@ -1416,8 +1423,8 @@ function renderSummary(matches) {
 
   els.resultNote.textContent =
     state.data?.filter?.note ||
-    (state.view === "today"
-      ? `${matches.length} danasnjih mec(eva), period do sutra u 07:00.${fixtureWarning}`
+    (state.competitionId === "today-matches"
+      ? `${matches.length} danasnjih mec(eva) iz Top 5 liga i UEFA takmicenja, period do sutra u 07:00.${fixtureWarning}`
       : state.view === "goals"
         ? `${matches.length} ${competitionLabel} mec(eva), golovi 2.5 ili 3.5, ${state.data?.elapsedMs || 0} ms proxy vreme.${fixtureWarning}`
         : state.view === "qualify"
@@ -1438,7 +1445,7 @@ function updateValueTicker(matches) {
   let outcomesToCheck = [];
   if (state.view === "goals") {
     outcomesToCheck = ["over25", "under25"];
-  } else if (state.view === "today") {
+  } else if (state.competitionId === "today-matches") {
     outcomesToCheck = ["home", "draw", "away", "over25", "under25"];
   } else {
     outcomesToCheck = ["home", "draw", "away"];
