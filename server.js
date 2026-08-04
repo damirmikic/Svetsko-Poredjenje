@@ -92,6 +92,7 @@ const COMPETITIONS = [
   {
     id: "epl",
     label: "England - Premier League",
+    terms: ["premier league", "premijer liga", "england 1", "engleska 1"],
     pinnacleLeagueCode: "england-premier-league",
     nsoftTournamentId: 33,
     superbetTournaments: ["106"],

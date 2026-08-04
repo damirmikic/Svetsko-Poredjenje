@@ -306,4 +306,6 @@ export const TEAM_ALIAS_ENTRIES = [
   ["sparta p.", "Sparta Prague"],
   ["sparta p", "Sparta Prague"],
   ["royale union sg", "Union Saint-Gilloise"],
+  ["nott.forest", "Nottingham Forest"],
+  ["nott forest", "Nottingham Forest"],
 ];
