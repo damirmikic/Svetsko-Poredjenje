@@ -1724,7 +1724,7 @@ async function getOddsmathFeed(bookmaker, competition) {
     entry.promise = fetchOddsmathMatches(competition)
       .then((result) => {
         entry.result = result;
-        entry.expiresAt = Date.now() + 60000;
+        entry.expiresAt = Date.now() + 25000;
         return result;
       })
       .catch((error) => {
@@ -1923,7 +1923,7 @@ export async function fetchBookmaker(bookmaker, competition) {
       .then((result) => {
         entry.result = result;
         const errorTtl = bookmaker.type === "mozzartbet" ? 180000 : 60000;
-        entry.expiresAt = Date.now() + (result.status === "error" ? errorTtl : 60000);
+        entry.expiresAt = Date.now() + (result.status === "error" ? errorTtl : 25000);
         return result;
       })
       .catch((error) => {
@@ -2451,6 +2451,7 @@ async function refreshStaleCompetitionAvailability(excludeId) {
 
 function resolveDefaultCompetitionId() {
   for (const competition of COMPETITIONS) {
+    if (competition.hidden || competition.virtual) continue;
     const entry = competitionAvailabilityCache.get(competition.id);
     if (!entry || entry.hasOffers !== false) return competition.id;
   }
