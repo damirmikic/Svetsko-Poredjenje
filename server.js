@@ -1568,8 +1568,13 @@ async function fetchOddsmathMatches(competition) {
   }
 
   const matches = [];
-  const btfoddsData = await fetchBtfOdds(competition);
-  
+  // Temporarily disabled: btfoddsCache.history accumulates entries per match
+  // key forever (never evicted, unlike the length cap on each key's array)
+  // and is a suspect in a memory growth pattern that's been crashing the
+  // Netlify function on reused Lambda containers. The Betfair-exchange
+  // fallback a few lines down still populates money flow without this.
+  const btfoddsData = null;
+
   const chunkSize = 15;
   for (let i = 0; i < events.length; i += chunkSize) {
     const chunk = events.slice(i, i + chunkSize);
