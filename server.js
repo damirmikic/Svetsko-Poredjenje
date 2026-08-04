@@ -165,7 +165,8 @@ const COMPETITIONS = [
     terms: ["champions league", "liga šampiona", "liga sampiona", "ucl"],
     pinnacleLeagueCode: "uefa-champions-league-qualifiers",
     nsoftTournamentId: 12,
-    superbetTournaments: ["142", "143", "94891"],
+    superbetTournaments: ["1362", "142", "143", "94891"],
+    superbetNamePattern: /liga (šampiona|sampiona)|champions league/i,
     oddsmathLeagueId: 1245,
     dualsoftCountry: ["Liga Šampiona", "Liga Sampiona", "Champions League"],
     dualsoftLeagueName: [
@@ -188,7 +189,8 @@ const COMPETITIONS = [
     terms: ["europa league", "liga evrope", "evropa liga", "liga europe", "uel"],
     pinnacleLeagueCode: ["uefa-europa-league-qualifiers", "uefa-europa-league"],
     nsoftTournamentId: 13,
-    superbetTournaments: ["144", "145"],
+    superbetTournaments: ["1348", "144", "145"],
+    superbetNamePattern: /liga (evrope|europe)|europa league/i,
     oddsmathLeagueId: 1247,
     dualsoftCountry: ["Europa League", "Liga Evrope", "Liga Europe", "Evropa"],
     dualsoftLeagueName: [
@@ -212,7 +214,8 @@ const COMPETITIONS = [
     terms: ["conference league", "konferencija", "liga konferencija", "uecl"],
     pinnacleLeagueCode: ["uefa-conference-league-qualifiers", "uefa-conference-league"],
     nsoftTournamentId: 14,
-    superbetTournaments: ["32382", "48093"],
+    superbetTournaments: ["52711", "32382", "48093"],
+    superbetNamePattern: /liga konferencija|conference league/i,
     oddsmathLeagueId: 93052,
     dualsoftCountry: ["Conference League", "Liga Konferencija", "Konferencija"],
     dualsoftLeagueName: [
@@ -250,8 +253,8 @@ function defaultSuperbetDateRange(days = 180) {
   from.setUTCHours(0, 0, 0, 0);
   const to = new Date(from.getTime() + days * 24 * 60 * 60 * 1000);
   return {
-    startDate: from.toISOString(),
-    endDate: to.toISOString(),
+    startDate: from.toISOString().split('.')[0] + 'Z',
+    endDate: to.toISOString().split('.')[0] + 'Z',
   };
 }
 
@@ -494,7 +497,6 @@ function superbetCompetitionUrl(bookmaker, competition) {
   const dateRange = competition.superbetDateRange || defaultSuperbetDateRange();
   const params = new URLSearchParams({
     sports: "5",
-    tournaments: competition.superbetTournaments.join(","),
     startDate: dateRange.startDate,
     endDate: dateRange.endDate,
   });
@@ -964,8 +966,14 @@ function normalizeSuperbetMatches(bookmaker, payload, competition) {
   return events
     .filter((event) => {
       const [home, away] = getSuperbetTeamNames(event);
+      const tName = String(event.fixture?.tournament_name || "").toLowerCase();
+      const cName = String(event.fixture?.category_name || "").toLowerCase();
+      const combined = `${tName} ${cName}`;
+      
+      const matchesName = competition.superbetNamePattern && competition.superbetNamePattern.test(combined);
+      
       return (
-        competition.superbetTournaments.includes(String(event.fixture?.tournament_id)) &&
+        (competition.superbetTournaments.includes(String(event.fixture?.tournament_id)) || matchesName) &&
         !textIncludesWomensCompetition([event.fixture?.tournament_name, home, away].join(" "))
       );
     })
