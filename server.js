@@ -1322,7 +1322,7 @@ async function fetchSseSnapshot(url, timeoutMs = FEED_TIMEOUT_MS) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  let onAbort;
+  let reader;
   try {
     const response = await fetch(url, {
       signal: controller.signal,
@@ -1340,16 +1340,8 @@ async function fetchSseSnapshot(url, timeoutMs = FEED_TIMEOUT_MS) {
       throw new Error(`HTTP ${response.status}: ${text.slice(0, 180)}`);
     }
 
-    const reader = response.body?.getReader();
+    reader = response.body?.getReader();
     if (!reader) throw new Error("Missing response stream.");
-
-    onAbort = () => {
-      reader.cancel().catch(() => {});
-    };
-    controller.signal.addEventListener("abort", onAbort);
-    if (controller.signal.aborted) {
-      onAbort();
-    }
 
     const decoder = new TextDecoder();
     let buffer = "";
@@ -1360,7 +1352,11 @@ async function fetchSseSnapshot(url, timeoutMs = FEED_TIMEOUT_MS) {
       buffer += decoder.decode(value, { stream: true });
       const data = extractFirstSseData(buffer);
       if (data) {
-        controller.abort();
+        // Cancel and await before returning - a fire-and-forget cancel here
+        // left a pending promise when the Lambda runtime froze the execution
+        // environment right after this function's caller resolved, which
+        // surfaced as an unrelated "Promise that was never settled" crash.
+        await reader.cancel().catch(() => {});
         return JSON.parse(data);
       }
     }
@@ -1374,9 +1370,6 @@ async function fetchSseSnapshot(url, timeoutMs = FEED_TIMEOUT_MS) {
     if (!data) throw new Error("SSE snapshot did not include a data event.");
     return JSON.parse(data);
   } finally {
-    if (onAbort) {
-      controller.signal.removeEventListener("abort", onAbort);
-    }
     clearTimeout(timeout);
   }
 }
