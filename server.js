@@ -2567,11 +2567,19 @@ async function getTodayMatchesPayload() {
   const startMs = dayStart.getTime();
   const endMs = dayEnd.getTime();
 
-  const results = await Promise.all(
-    TODAY_COMPETITION_IDS.map((id) =>
-      getOddsPayload(id).catch((err) => ({ matches: [], feeds: [], bookmakers: [], unmatched: [], error: err.message })),
-    ),
-  );
+  // Each getOddsPayload() call fans out to ~10 bookmaker fetches on its own;
+  // running all 8 competitions fully in parallel means up to ~80 concurrent
+  // outbound requests from one invocation, which has been crashing the
+  // Netlify function outright. Batching keeps peak concurrency bounded.
+  const results = [];
+  for (const batch of chunkArray(TODAY_COMPETITION_IDS, 3)) {
+    const batchResults = await Promise.all(
+      batch.map((id) =>
+        getOddsPayload(id).catch((err) => ({ matches: [], feeds: [], bookmakers: [], unmatched: [], error: err.message })),
+      ),
+    );
+    results.push(...batchResults);
+  }
 
   const todayMatches = results
     .flatMap((r) =>
