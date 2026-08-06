@@ -97,6 +97,7 @@ export const TEAM_ALIAS_ENTRIES = [
   ["crvena zvezda beograd", "Red Star Belgrade"],
   ["cs u craiova", "CSU Craiova"],
   ["cs universitatea", "CSU Craiova"],
+  ["cs universitatea craiova", "CSU Craiova"],
   ["cska 1948", "CSKA 1948"],
   ["cska 1948 sofia", "CSKA 1948"],
   ["cska 1948 sofiya", "CSKA 1948"],
@@ -405,6 +406,9 @@ export const TEAM_ALIAS_ENTRIES = [
   ["tromsoe il", "Tromso"],
   ["twente enschede", "FC Twente"],
   ["wkw eto fc gyoer", "Gyori ETO"],
+  ["heart of midlothian fc", "Heart of Midlothian"],
+  ["kuopion palloseura", "KuPS Kuopio"],
+  ["sl benfica", "Benfica"],
   ["wkw eto fc gyor", "Gyori ETO"],
   ["zurich", "FC Zürich"],
 ];

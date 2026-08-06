@@ -195,7 +195,7 @@ const COMPETITIONS = [
     label: "UEFA Europa League",
     terms: ["europa league", "liga evrope", "evropa liga", "liga europe", "uel"],
     pinnacleLeagueCode: ["uefa-europa-league-qualifiers", "uefa-europa-league"],
-    nsoftTournamentId: [13],
+    nsoftTournamentId: [13, 1470],
     superbetTournaments: ["1348", "144", "145"],
     superbetNamePattern: /liga (evrope|europe)|europa league/i,
     oddsmathLeagueId: 1247,
