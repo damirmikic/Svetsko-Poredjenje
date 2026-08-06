@@ -58,6 +58,7 @@ const state = {
   outrightAlertMatchKey: null,
   accumulatorX: 4,
   accumulatorType: "favorite",
+  recentChangesHistory: [],
 };
 const oddsRefreshMs = 30_000;
 const oddsPulseMs = 10_000;
@@ -91,12 +92,13 @@ const els = {
   accumulatorXValue: document.querySelector("#accumulatorXValue"),
   accumulatorTypeSelect: document.querySelector("#accumulatorTypeSelect"),
   accumulatorView: document.querySelector("#accumulatorView"),
+  valueOddsView: document.querySelector("#valueOddsView"),
+  recentChangesView: document.querySelector("#recentChangesView"),
+  changesTabBadge: document.querySelector("#changesTabBadge"),
   oddsTableWrap: document.querySelector("#oddsTableWrap"),
   unmatchedPanel: document.querySelector("#unmatchedPanel"),
   unmatchedCount: document.querySelector("#unmatchedCount"),
   unmatchedList: document.querySelector("#unmatchedList"),
-  unmatchedView: document.querySelector("#unmatchedView"),
-  unmatchedTabBadge: document.querySelector("#unmatchedTabBadge"),
 };
 
 function formatOdd(value) {
@@ -315,8 +317,35 @@ function trackChangedOdds(previousSnapshot, nextSnapshot) {
           newValue: Number(value),
           movePercent,
         });
+
+        const match = state.data?.matches?.find((m) => m.matchKey === matchKey);
+        state.recentChangesHistory.unshift({
+          id: `${now}-${Math.random().toString(36).substr(2, 5)}`,
+          timestamp: new Date(now),
+          matchKey,
+          home: match?.home || "Nepoznat tim",
+          away: match?.away || "Nepoznat tim",
+          leagueName: match?.leagueName || "",
+          bookmakerId,
+          bookmakerName: getBookmakerName(bookmakerId),
+          outcome,
+          outcomeLabel: getOutcomeToastLabel(match, outcome),
+          oldValue: Number(previousValue),
+          newValue: Number(value),
+          movePercent,
+          direction: Number(value) > Number(previousValue) ? "up" : "down",
+        });
+        if (state.recentChangesHistory.length > 100) {
+          state.recentChangesHistory.pop();
+        }
       }
     }
+  }
+
+  if (els.changesTabBadge) {
+    const count = state.recentChangesHistory.length;
+    els.changesTabBadge.textContent = count > 0 ? String(count) : "";
+    els.changesTabBadge.classList.toggle("hidden", count === 0);
   }
 
   for (const [key, expiresAt] of state.changedOddsUntil.entries()) {
@@ -604,24 +633,32 @@ function renderView() {
     goals: `${competitionLabel} - Golovi 2.5`,
     qualify: `${competitionLabel} - Ide dalje (nokaut faza)`,
     accumulator: "Množenje kvota na favorite za naredne mečeve",
-    unmatched: "Neuparene utakmice po izvoru",
+    "value-odds": `${competitionLabel} - Kvote iznad max reference`,
+    "recent-changes": "Istorija poslednjih promena kvota",
   };
   els.tableTitle.textContent = titles[state.view] || titles.all;
   els.oddsTable.classList.toggle("is-today", isToday);
 
   const isAcc = state.view === "accumulator";
-  const isUnmatched = state.view === "unmatched";
-  els.oddsTableWrap.classList.toggle("hidden", isAcc || isUnmatched);
+  const isValueOdds = state.view === "value-odds";
+  const isRecentChanges = state.view === "recent-changes";
+  const isCustomView = isAcc || isValueOdds || isRecentChanges;
+
+  els.oddsTableWrap.classList.toggle("hidden", isCustomView);
   els.accumulatorView.classList.toggle("hidden", !isAcc);
   els.accumulatorFilterSection.classList.toggle("hidden", !isAcc);
-  els.unmatchedView.classList.toggle("hidden", !isUnmatched);
-  // Hide the old collapsible panel when the dedicated tab is open
-  els.unmatchedPanel.classList.toggle("hidden", isUnmatched || (state.data?.unmatched?.length ?? 0) === 0);
+  if (els.valueOddsView) els.valueOddsView.classList.toggle("hidden", !isValueOdds);
+  if (els.recentChangesView) els.recentChangesView.classList.toggle("hidden", !isRecentChanges);
+
+  if (els.unmatchedPanel) {
+    const hasUnmatched = (state.data?.unmatched?.length ?? 0) > 0;
+    els.unmatchedPanel.classList.toggle("hidden", !hasUnmatched);
+  }
 
   const noVigLimitSec = els.noVigLimitInput?.closest("section");
   const thresholdSec = els.oddsThresholdInput?.closest("section");
-  if (noVigLimitSec) noVigLimitSec.style.display = (isAcc || isUnmatched) ? "none" : "block";
-  if (thresholdSec) thresholdSec.style.display = (isAcc || isUnmatched) ? "none" : "block";
+  if (noVigLimitSec) noVigLimitSec.style.display = (isAcc || isRecentChanges) ? "none" : "block";
+  if (thresholdSec) thresholdSec.style.display = (isAcc || isValueOdds) ? "none" : "block";
 }
 
 function activeOutcomes() {
@@ -1962,6 +1999,218 @@ function renderUnmatched() {
   `;
 }
 
+function renderValueOddsView(matches) {
+  if (!els.valueOddsView) return;
+  if (state.view !== "value-odds") return;
+
+  const valueBets = [];
+  const enabledDomesticBookmakers = bookmakerOrder.filter(
+    (id) =>
+      state.enabledBookmakers.has(id) &&
+      id !== "pinnacle_shin" &&
+      id !== "pinnacle" &&
+      id !== "betfair_lay"
+  );
+
+  const outcomesToTest = ["home", "draw", "away", "over25", "under25", "qualifyHome", "qualifyAway"];
+
+  for (const match of matches) {
+    const refOddsEntry = match.bookmakers?.pinnacle_shin || match.bookmakers?.pinnacle;
+    if (!refOddsEntry) continue;
+
+    for (const outcome of outcomesToTest) {
+      const refOdd = outcomeValue(refOddsEntry, outcome);
+      if (!isValidOdd(refOdd)) continue;
+
+      for (const bookieId of enabledDomesticBookmakers) {
+        const bookieEntry = match.bookmakers?.[bookieId];
+        if (!bookieEntry || bookieEntry.isReference) continue;
+        const bookieOdd = outcomeValue(bookieEntry, outcome);
+        if (!isValidOdd(bookieOdd)) continue;
+
+        const numericBookie = Number(bookieOdd);
+        const numericRef = Number(refOdd);
+        const edgePercent = ((numericBookie / numericRef) - 1) * 100;
+
+        if (edgePercent >= state.noVigLimitPercent) {
+          valueBets.push({
+            match,
+            matchup: `${match.home} vs ${match.away}`,
+            kickOffTime: match.kickOffTime,
+            leagueName: match.leagueName,
+            bookmakerId: bookieId,
+            bookmakerName: getBookmakerName(bookieId),
+            outcome,
+            outcomeLabel: getOutcomeToastLabel(match, outcome),
+            bookieOdd: numericBookie,
+            refOdd: numericRef,
+            edge: edgePercent,
+          });
+        }
+      }
+    }
+  }
+
+  valueBets.sort((a, b) => b.edge - a.edge);
+
+  if (valueBets.length === 0) {
+    els.valueOddsView.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">🎯</div>
+        <strong>Nema kvota iznad zadatog praga (+${state.noVigLimitPercent}%)</strong>
+        <span>Kvote domaćih kladionica trenutno ne prelaze Pinnacle reference u izabranom takmičenju. Možete smanjiti prag u levoj traci.</span>
+      </div>
+    `;
+    return;
+  }
+
+  const rowsHtml = valueBets
+    .map((bet, idx) => {
+      const kickOff = bet.kickOffTime ? formatTime(bet.kickOffTime) : "-";
+      return `
+        <tr>
+          <td class="vo-rank">${idx + 1}</td>
+          <td class="vo-match">
+            <strong>${escapeHtml(bet.match.home)} vs ${escapeHtml(bet.match.away)}</strong>
+            <small>${escapeHtml(bet.leagueName || "")} · ${escapeHtml(kickOff)}</small>
+          </td>
+          <td class="vo-outcome">
+            <span class="vo-outcome-badge">${escapeHtml(bet.outcomeLabel)}</span>
+          </td>
+          <td class="vo-bookie">
+            <strong>${escapeHtml(bet.bookmakerName)}</strong>
+          </td>
+          <td class="vo-odds">
+            <strong class="vo-odd-val">${bet.bookieOdd.toFixed(2)}</strong>
+            <span class="vo-ref-val">vs Pin ${bet.refOdd.toFixed(2)}</span>
+          </td>
+          <td class="vo-edge">
+            <span class="vo-edge-badge">+${bet.edge.toFixed(1)}%</span>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  els.valueOddsView.innerHTML = `
+    <div class="vo-summary-banner">
+      <div>
+        <span class="vo-summary-label">Pronađeno vrednosnih kvota:</span>
+        <strong class="vo-summary-count">${valueBets.length}</strong>
+      </div>
+      <div>
+        <span class="vo-summary-label">Prag vrednosti:</span>
+        <strong class="vo-summary-threshold">+${state.noVigLimitPercent}% iznad Pinnacle</strong>
+      </div>
+      <div>
+        <span class="vo-summary-label">Najveća prednost:</span>
+        <strong class="vo-summary-max">+${valueBets[0].edge.toFixed(1)}% (${valueBets[0].bookmakerName})</strong>
+      </div>
+    </div>
+
+    <div class="vo-table-wrap">
+      <table class="vo-table">
+        <thead>
+          <tr>
+            <th class="vo-rank-head">#</th>
+            <th>Meč i vreme</th>
+            <th>Tip opklade</th>
+            <th>Kladionica</th>
+            <th>Kvota (vs Ref)</th>
+            <th>Prednost</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderRecentChangesView() {
+  if (!els.recentChangesView) return;
+  if (state.view !== "recent-changes") return;
+
+  const history = state.recentChangesHistory || [];
+
+  if (history.length === 0) {
+    els.recentChangesView.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">⚡</div>
+        <strong>Nema zabeleženih promena kvota</strong>
+        <span>Promene kvota se automatski zabeležavaju pri svakom osvežavanju pozadinskih feedova. Kada dođe do promene iznad zadatog praga (${state.oddsThresholdPercent}%), pojaviće se ovde.</span>
+      </div>
+    `;
+    return;
+  }
+
+  const rowsHtml = history
+    .map((item) => {
+      const timeStr = item.timestamp ? new Date(item.timestamp).toLocaleTimeString("sr-RS") : "-";
+      const isUp = item.direction === "up";
+      const badgeClass = isUp ? "up" : "down";
+      const icon = isUp ? "↑" : "↓";
+      const sign = isUp ? "+" : "-";
+
+      return `
+        <tr>
+          <td class="rc-time">${escapeHtml(timeStr)}</td>
+          <td class="rc-match">
+            <strong>${escapeHtml(item.home)} vs ${escapeHtml(item.away)}</strong>
+            <small>${escapeHtml(item.leagueName || "")}</small>
+          </td>
+          <td class="rc-bookie">
+            <span>${escapeHtml(item.bookmakerName)}</span>
+          </td>
+          <td class="rc-outcome">
+            <span class="rc-outcome-badge">${escapeHtml(item.outcomeLabel)}</span>
+          </td>
+          <td class="rc-transition">
+            <span class="rc-old-odd">${item.oldValue.toFixed(2)}</span>
+            <span class="rc-arrow">&rarr;</span>
+            <strong class="rc-new-odd">${item.newValue.toFixed(2)}</strong>
+          </td>
+          <td class="rc-change">
+            <span class="rc-change-badge ${badgeClass}">${icon} ${sign}${item.movePercent.toFixed(1)}%</span>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  els.recentChangesView.innerHTML = `
+    <div class="rc-summary-banner">
+      <div>
+        <span class="rc-summary-label">Zabeleženih promena:</span>
+        <strong class="rc-summary-count">${history.length}</strong>
+      </div>
+      <div>
+        <span class="rc-summary-label">Prag za detekciju:</span>
+        <strong class="rc-summary-threshold">${state.oddsThresholdPercent}%</strong>
+      </div>
+    </div>
+
+    <div class="rc-table-wrap">
+      <table class="rc-table">
+        <thead>
+          <tr>
+            <th class="rc-time-head">Vreme</th>
+            <th>Meč</th>
+            <th>Kladionica</th>
+            <th>Tip</th>
+            <th>Stara &rarr; Nova kvota</th>
+            <th>Promena</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
 function render() {
   renderCompetitionTabs();
   renderBookmakerToggles();
@@ -1970,6 +2219,10 @@ function render() {
   
   if (state.view === "accumulator") {
     renderAccumulatorView(matches);
+  } else if (state.view === "value-odds") {
+    renderValueOddsView(matches);
+  } else if (state.view === "recent-changes") {
+    renderRecentChangesView();
   } else {
     renderNoVigLimit();
     renderOddsThreshold();
