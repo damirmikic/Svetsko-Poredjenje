@@ -171,11 +171,11 @@ const COMPETITIONS = [
     label: "UEFA Champions League",
     terms: ["champions league", "liga šampiona", "liga sampiona", "ucl"],
     pinnacleLeagueCode: "uefa-champions-league-qualifiers",
-    nsoftTournamentId: 12,
+    nsoftTournamentId: [12],
     superbetTournaments: ["1362", "142", "143", "94891"],
     superbetNamePattern: /liga (šampiona|sampiona)|champions league/i,
     oddsmathLeagueId: 1245,
-    dualsoftCountry: ["Liga Šampiona", "Liga Sampiona", "Champions League"],
+    dualsoftCountry: ["Liga Šampiona", "Liga Sampiona", "Champions League", "Međunarodne", "Medunarodne", "Top Lige", "UEFA"],
     dualsoftLeagueName: [
       "Champions League",
       "UEFA Champions League - Qual.",
@@ -195,11 +195,11 @@ const COMPETITIONS = [
     label: "UEFA Europa League",
     terms: ["europa league", "liga evrope", "evropa liga", "liga europe", "uel"],
     pinnacleLeagueCode: ["uefa-europa-league-qualifiers", "uefa-europa-league"],
-    nsoftTournamentId: 13,
+    nsoftTournamentId: [13],
     superbetTournaments: ["1348", "144", "145"],
     superbetNamePattern: /liga (evrope|europe)|europa league/i,
     oddsmathLeagueId: 1247,
-    dualsoftCountry: ["Europa League", "Liga Evrope", "Liga Europe", "Evropa"],
+    dualsoftCountry: ["Europa League", "Liga Evrope", "Liga Europe", "Evropa", "Međunarodne", "Medunarodne", "Top Lige", "UEFA"],
     dualsoftLeagueName: [
       "Europa League",
       "UEFA Europa League - Qual.",
@@ -220,13 +220,13 @@ const COMPETITIONS = [
   {
     id: "conference-league",
     label: "UEFA Conference League",
-    terms: ["conference league", "konferencija", "liga konferencija", "uecl"],
+    terms: ["conference league", "konferencija", "konferencije", "liga konferencija", "liga konferencije", "uecl"],
     pinnacleLeagueCode: ["uefa-conference-league-qualifiers", "uefa-conference-league"],
-    nsoftTournamentId: 14,
+    nsoftTournamentId: [14, 39655],
     superbetTournaments: ["52711", "32382", "48093"],
     superbetNamePattern: /liga konferencija|conference league/i,
     oddsmathLeagueId: 93052,
-    dualsoftCountry: ["Conference League", "Liga Konferencija", "Konferencija"],
+    dualsoftCountry: ["Conference League", "Liga Konferencija", "Liga Konferencije", "Konferencija", "Konferencije", "Međunarodne", "Medunarodne", "Top Lige", "UEFA"],
     dualsoftLeagueName: [
       "Conference League",
       "UEFA Conference League - Qual.",
@@ -237,6 +237,11 @@ const COMPETITIONS = [
       "Liga Konferencija (Kval.)",
       "Liga Konferencija Kval.",
       "Liga Konferencije Kvalifikacije",
+      "Liga Konferencije - Kvalifikacije",
+      "Liga Konferencije (Kval.)",
+      "Liga Konferencije Kval.",
+      "UEFA Liga Konferencije",
+      "Liga Konferencije",
     ],
     mozzartCountryTerm: "conference",
     mozzartLeagueTerm: "league",
@@ -373,8 +378,17 @@ if (IS_NETLIFY) {
   }
 }
 
+// getTodayMatchesPayload fans out to ~80 concurrent bookmaker fetches (8
+// competitions x ~10 bookmakers each); paying Blobs' network latency on
+// every single one of those pushed total time past Netlify's 26s function
+// limit and crashed it. Single-competition requests are exactly where the
+// shared cache earns its keep (repeat tab switches), so it stays enabled
+// there - this flag opts today-matches back out to the plain in-memory
+// cache instead of removing Blobs altogether.
+let sharedCacheEnabled = true;
+
 async function readSharedCache(key) {
-  if (!blobStore) return null;
+  if (!blobStore || !sharedCacheEnabled) return null;
   try {
     const entry = await blobStore.get(key, { type: "json" });
     if (!entry || entry.expiresAt <= Date.now()) return null;
@@ -386,7 +400,7 @@ async function readSharedCache(key) {
 }
 
 async function writeSharedCache(key, result, ttlMs) {
-  if (!blobStore) return;
+  if (!blobStore || !sharedCacheEnabled) return;
   try {
     await blobStore.setJSON(key, { result, expiresAt: Date.now() + ttlMs });
   } catch (error) {
@@ -513,11 +527,14 @@ function dualsoftOfferUrl(baseUrl) {
 
 function nsoftCompetitionUrl(bookmaker, competition) {
   const dateRange = competition.nsoftDateRange || defaultDateRangeIso();
+  const tournamentIds = Array.isArray(competition.nsoftTournamentId)
+    ? competition.nsoftTournamentId.join(",")
+    : String(competition.nsoftTournamentId);
   const params = new URLSearchParams({
     companyUuid: bookmaker.companyUuid,
     "filter[from]": dateRange.from,
     "filter[to]": dateRange.to,
-    "filter[tournamentId]": String(competition.nsoftTournamentId),
+    "filter[tournamentId]": tournamentIds,
     timezone: "Europe/Belgrade",
     dataFormat: JSON.stringify({
       default: "object",
@@ -945,11 +962,14 @@ function getNsoftTotals25(event) {
 
 function normalizeNsoftMatches(bookmaker, payload, competition) {
   const events = Array.isArray(payload?.data?.events) ? payload.data.events : [];
+  const allowedTournaments = Array.isArray(competition.nsoftTournamentId)
+    ? competition.nsoftTournamentId.map(Number)
+    : [Number(competition.nsoftTournamentId)];
 
   return events
     .filter(
       (event) =>
-        Number(event.f) === Number(competition.nsoftTournamentId) &&
+        allowedTournaments.includes(Number(event.f)) &&
         !textIncludesWomensCompetition([event.g, event.j, Object.values(event.p || {}).map((item) => item.d).join(" ")].join(" ")),
     )
     .map((event) => {
@@ -2683,14 +2703,19 @@ async function getTodayMatchesPayload() {
   // running all 8 competitions fully in parallel means up to ~80 concurrent
   // outbound requests from one invocation, which has been crashing the
   // Netlify function outright. Batching keeps peak concurrency bounded.
+  sharedCacheEnabled = false;
   const results = [];
-  for (const batch of chunkArray(TODAY_COMPETITION_IDS, 3)) {
-    const batchResults = await Promise.all(
-      batch.map((id) =>
-        getOddsPayload(id).catch((err) => ({ matches: [], feeds: [], bookmakers: [], unmatched: [], error: err.message })),
-      ),
-    );
-    results.push(...batchResults);
+  try {
+    for (const batch of chunkArray(TODAY_COMPETITION_IDS, 3)) {
+      const batchResults = await Promise.all(
+        batch.map((id) =>
+          getOddsPayload(id).catch((err) => ({ matches: [], feeds: [], bookmakers: [], unmatched: [], error: err.message })),
+        ),
+      );
+      results.push(...batchResults);
+    }
+  } finally {
+    sharedCacheEnabled = true;
   }
 
   const todayMatches = results
