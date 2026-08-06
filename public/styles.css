@@ -1890,6 +1890,17 @@ select,
   line-height: 1.4;
 }
 
+/* ── Custom View Scroll Containers ────────── */
+.accumulator-view,
+.value-odds-view,
+.recent-changes-view,
+.unmatched-view {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 16px;
+}
+
 /* ── Value Odds & Recent Changes Views ────────── */
 .vo-summary-banner,
 .rc-summary-banner {
