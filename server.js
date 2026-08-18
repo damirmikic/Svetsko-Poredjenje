@@ -1984,7 +1984,7 @@ async function fetchBookmakerUncached(bookmaker, competition) {
   }
 
   if (bookmaker.type === "mozzartbet") {
-    return fetchMozzartbetMatches(bookmaker, competition);
+    return fetchMozzartbetMatches(bookmaker, competition, Math.max(FEED_TIMEOUT_MS, 15000));
   }
 
   return {
