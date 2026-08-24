@@ -65,6 +65,53 @@ const oddsPulseMs = 10_000;
 let isLoadingOdds = false;
 let nextRefreshAt = Date.now() + oddsRefreshMs;
 
+const footballLoaderMessages = [
+  "⚽ Tražimo VAR odluku za ove kvote...",
+  "🏃 Pinnacle trči sporije od Modrića u 90. minutu...",
+  "🟨 Sudija kažnjava server žutom kartom...",
+  "🧤 Golman blokira API zahtev rukama...",
+  "📺 Komentar VAR sobe: 'Čekamo potvrdu kvote'...",
+  "⏱️ Nadoknada vremena: još 3 sekunde...",
+  "🎯 Igrač šutira, lopta leti ka serveru...",
+  "🪄 Trener menja taktiku učitavanja...",
+  "🏆 Kvote se zagrevaju kao zamene na terenu...",
+  "📡 Proveravamo feed kao što sudija proverava ofsajd...",
+  "💨 Server diše kao igrač nakon extra vremena...",
+  "🧠 Analiziramo kao što Guardiola analizira utakmicu...",
+  "🎺 Navijači čekaju, server radi...",
+  "🔁 Još jedna rotacija u sredini terena servera...",
+  "⚽ Lopta je u mreži... podataka...",
+  "🧃 Poluvreme: server pije sok od narandže...",
+  "📋 Šef struke menja formaciju učitavanja...",
+  "🌧️ Loše vreme za igru, ali kvote stižu...",
+  "🎵 Himna se svira dok čekamo podatke...",
+  "🏟️ Stadion je spreman, kvote dolaze na teren...",
+];
+let footballLoaderTimer = null;
+let footballLoaderMsgIdx = 0;
+
+function startFootballLoader() {
+  if (!els.footballLoader || !els.footballLoaderMsg) return;
+  footballLoaderMsgIdx = Math.floor(Math.random() * footballLoaderMessages.length);
+  els.footballLoaderMsg.textContent = footballLoaderMessages[footballLoaderMsgIdx];
+  els.footballLoader.classList.remove("hidden");
+  clearInterval(footballLoaderTimer);
+  footballLoaderTimer = setInterval(() => {
+    footballLoaderMsgIdx = (footballLoaderMsgIdx + 1) % footballLoaderMessages.length;
+    // Re-trigger fade animation by forcing reflow
+    els.footballLoaderMsg.style.animation = "none";
+    void els.footballLoaderMsg.offsetWidth;
+    els.footballLoaderMsg.style.animation = "";
+    els.footballLoaderMsg.textContent = footballLoaderMessages[footballLoaderMsgIdx];
+  }, 2500);
+}
+
+function stopFootballLoader() {
+  clearInterval(footballLoaderTimer);
+  footballLoaderTimer = null;
+  if (els.footballLoader) els.footballLoader.classList.add("hidden");
+}
+
 const els = {
   refreshButton: document.querySelector("#refreshButton"),
   refreshCountdown: document.querySelector("#refreshCountdown"),
@@ -99,6 +146,8 @@ const els = {
   unmatchedPanel: document.querySelector("#unmatchedPanel"),
   unmatchedCount: document.querySelector("#unmatchedCount"),
   unmatchedList: document.querySelector("#unmatchedList"),
+  footballLoader: document.querySelector("#footballLoader"),
+  footballLoaderMsg: document.querySelector("#footballLoaderMsg"),
 };
 
 function formatOdd(value) {
@@ -285,7 +334,7 @@ function showOddsChangeNotification(changes) {
     .join("");
 
   backdrop.classList.add("show");
-  
+
   if (backdrop.hideTimeout) {
     clearTimeout(backdrop.hideTimeout);
   }
@@ -523,6 +572,12 @@ async function loadOdds() {
 function setLoading(isLoading) {
   els.refreshButton.disabled = isLoading;
   els.refreshButton.classList.toggle("is-loading", isLoading);
+  // Show the football loader only when there's no data yet (league switch)
+  if (isLoading && !state.data) {
+    startFootballLoader();
+  } else if (!isLoading) {
+    stopFootballLoader();
+  }
 }
 
 function renderRefreshCountdown() {
@@ -558,8 +613,8 @@ function renderCompetitionTabs() {
           <optgroup label="— Takmičenja —">
         ` : ""}
         ${regularOptions
-          .map((c) => `<option value="${c.id}" ${c.id === state.competitionId ? "selected" : ""}>${c.label}</option>`)
-          .join("")}
+      .map((c) => `<option value="${c.id}" ${c.id === state.competitionId ? "selected" : ""}>${c.label}</option>`)
+      .join("")}
         ${todayOption ? `</optgroup>` : ""}
       </select>
       <span class="competition-dropdown-arrow">▼</span>
@@ -575,6 +630,10 @@ function renderCompetitionTabs() {
       state.oddsSnapshot = new Map();
       state.changedOddsUntil = new Map();
       state.changedOddsDirection = new Map();
+      // Immediately clear stale data so the old league isn't shown while the
+      // new one is loading.
+      state.data = null;
+      render();
       loadOdds();
     });
   }
@@ -1284,26 +1343,26 @@ function renderHead() {
       <th class="match-head">Mec</th>
       <th class="max-head">Max kvota</th>
       ${enabled
-        .map((id) => {
-          const bookmaker = bookmakerMap.get(id);
-          return `<th class="bookmaker-head" colspan="${outcomes.length}">${bookmaker?.name || id}</th>`;
-        })
-        .join("")}
+      .map((id) => {
+        const bookmaker = bookmakerMap.get(id);
+        return `<th class="bookmaker-head" colspan="${outcomes.length}">${bookmaker?.name || id}</th>`;
+      })
+      .join("")}
       <th class="margin-head">Margina</th>
     </tr>
     <tr class="subhead">
       <th></th>
       <th class="max-head">fav</th>
       ${enabled
-        .map(() =>
-          outcomes
-            .map((outcome, index) => {
-              const className = index === 0 ? "group-start" : index === outcomes.length - 1 ? "group-end" : "";
-              return `<th class="${className}">${marketLabels[outcome]}</th>`;
-            })
-            .join(""),
-        )
-        .join("")}
+      .map(() =>
+        outcomes
+          .map((outcome, index) => {
+            const className = index === 0 ? "group-start" : index === outcomes.length - 1 ? "group-end" : "";
+            return `<th class="${className}">${marketLabels[outcome]}</th>`;
+          })
+          .join(""),
+      )
+      .join("")}
       <th class="margin-head">%</th>
     </tr>
   `;
@@ -1318,23 +1377,23 @@ function formatMoneyFlow(amount) {
 
 function renderMoneyFlowChart(history, outcome) {
   if (!history || history.length < 2) return "";
-  
+
   const data = [...history].reverse().map(h => outcome ? (h[outcome] || 0) : (h.home + h.draw + h.away));
   const min = Math.min(...data);
   const max = Math.max(...data);
-  
+
   if (max === 0 || max === min) return "";
-  
+
   const width = 80;
   const height = 16;
   const padding = 2;
-  
+
   const points = data.map((val, i) => {
     const x = padding + (i / (data.length - 1)) * (width - 2 * padding);
     const y = height - padding - ((val - min) / (max - min)) * (height - 2 * padding);
     return `${x},${y}`;
   }).join(" ");
-  
+
   return `
     <div class="money-flow-chart-wrap" title="Betfair matched volume history">
       <svg class="money-flow-chart" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
@@ -1354,13 +1413,13 @@ function renderRows(matches) {
     const emptyMessage =
       state.competitionId === "today-matches"
         ? {
-            title: "Nema danasnjih meceva u aktivnim feedovima.",
-            text: "Filter obuhvata meceve od danas u 00:00 do sutra u 07:00 (Top 5 liga + UEFA).",
-          }
+          title: "Nema danasnjih meceva u aktivnim feedovima.",
+          text: "Filter obuhvata meceve od danas u 00:00 do sutra u 07:00 (Top 5 liga + UEFA).",
+        }
         : {
-            title: `Nema ${state.data?.filter?.competition || "World Cup"} meceva u aktivnim feedovima.`,
-            text: "Dashboard je spreman; cim kladionice oznace ligu ili market, redovi ce se pojaviti ovde.",
-          };
+          title: `Nema ${state.data?.filter?.competition || "World Cup"} meceva u aktivnim feedovima.`,
+          text: "Dashboard je spreman; cim kladionice oznace ligu ili market, redovi ce se pojaviti ovde.",
+        };
 
     els.oddsBody.innerHTML = `
       <tr>
@@ -1408,7 +1467,7 @@ function renderRows(matches) {
                   : moveDirection === "down"
                     ? `<span class="odd-move-arrow" aria-label="Kvota pada">&darr;</span>`
                     : "";
-                    
+
               let moneyFlowHtml = "";
               if (bookmakerId === "betfair_lay" && bfMoneyFlow && bfMoneyFlow[outcome]) {
                 const flow = formatMoneyFlow(bfMoneyFlow[outcome]);
@@ -1443,11 +1502,10 @@ function renderRows(matches) {
             </div>
           </td>
           <td class="max-cell">
-            ${
-              maxOdds
-                ? `<strong>${formatOdd(maxOdds.value)}</strong><span>${maxOdds.label}</span>`
-                : `<strong>-</strong><span>-</span>`
-            }
+            ${maxOdds
+          ? `<strong>${formatOdd(maxOdds.value)}</strong><span>${maxOdds.label}</span>`
+          : `<strong>-</strong><span>-</span>`
+        }
           </td>
           ${oddsCells}
           <td class="margin-cell">${margin === null ? "-" : `${margin.toFixed(2)}%`}</td>
@@ -1522,8 +1580,8 @@ function updateValueTicker(matches) {
 
         const edge = ((Number(odd) / Number(noVig)) - 1) * 100;
         if (edge > 0) {
-          const outcomeLabel = outcome === "over25" || outcome === "under25" 
-            ? goalsOutcomeLabel(match, outcome) 
+          const outcomeLabel = outcome === "over25" || outcome === "under25"
+            ? goalsOutcomeLabel(match, outcome)
             : marketLabels[outcome];
 
           valueBets.push({
@@ -1560,17 +1618,17 @@ function updateValueTicker(matches) {
 function calculateAccumulator(matches, X, type = "favorite") {
   const legs = [];
   let count = 0;
-  
+
   const sortedMatches = [...matches].sort((a, b) => Number(a.kickOffTime || 0) - Number(b.kickOffTime || 0));
-  
+
   for (const match of sortedMatches) {
     if (count >= X) break;
-    
+
     let outcome = null;
     let refOdd = null;
     let teamName = "";
     let customLabel = null;
-    
+
     if (type === "over25") {
       const overOdd = outcomeValue(match.bookmakers?.pinnacle_shin, "over25") || outcomeValue(match.bookmakers?.pinnacle, "over25");
       let hasDomOdds = false;
@@ -1581,7 +1639,7 @@ function calculateAccumulator(matches, X, type = "favorite") {
           break;
         }
       }
-      
+
       if (hasDomOdds) {
         outcome = "over25";
         refOdd = isValidOdd(overOdd) ? Number(overOdd) : null;
@@ -1592,7 +1650,7 @@ function calculateAccumulator(matches, X, type = "favorite") {
       const refOdds = match.bookmakers?.pinnacle_shin?.odds || match.bookmakers?.pinnacle?.odds;
       let favOutcome = null;
       let minOdd = Infinity;
-      
+
       if (refOdds && isValidOdd(refOdds.home) && isValidOdd(refOdds.draw) && isValidOdd(refOdds.away)) {
         if (Number(refOdds.home) < minOdd) { minOdd = Number(refOdds.home); favOutcome = "home"; }
         if (Number(refOdds.draw) < minOdd) { minOdd = Number(refOdds.draw); favOutcome = "draw"; }
@@ -1609,21 +1667,21 @@ function calculateAccumulator(matches, X, type = "favorite") {
         const avgHome = homeCount > 0 ? homeSum / homeCount : Infinity;
         const avgDraw = drawCount > 0 ? drawSum / drawCount : Infinity;
         const avgAway = awayCount > 0 ? awaySum / awayCount : Infinity;
-        
+
         if (avgHome < minOdd) { minOdd = avgHome; favOutcome = "home"; }
         if (avgDraw < minOdd) { minOdd = avgDraw; favOutcome = "draw"; }
         if (avgAway < minOdd) { minOdd = avgAway; favOutcome = "away"; }
       }
-      
+
       if (favOutcome && minOdd !== Infinity) {
         outcome = favOutcome;
         refOdd = minOdd;
         teamName = favOutcome === "home" ? match.home : favOutcome === "away" ? match.away : "Nerešeno";
       }
     }
-    
+
     if (!outcome) continue;
-    
+
     legs.push({
       match,
       outcome,
@@ -1633,7 +1691,7 @@ function calculateAccumulator(matches, X, type = "favorite") {
     });
     count++;
   }
-  
+
   const domesticBookies = [
     { id: "merkurxtip", name: "MerkurXtip" },
     { id: "maxbet", name: "MaxBet" },
@@ -1642,12 +1700,12 @@ function calculateAccumulator(matches, X, type = "favorite") {
     { id: "soccerbet", name: "SoccerBet" },
     { id: "superbet", name: "Superbet" }
   ];
-  
+
   const rankedBookmakers = domesticBookies.map(bookie => {
     let totalOdd = 1;
     let complete = true;
     const legOdds = [];
-    
+
     for (const leg of legs) {
       const odd = outcomeValue(leg.match.bookmakers?.[bookie.id], leg.outcome);
       if (isValidOdd(odd)) {
@@ -1658,7 +1716,7 @@ function calculateAccumulator(matches, X, type = "favorite") {
         legOdds.push(null);
       }
     }
-    
+
     return {
       ...bookie,
       totalOdd: complete ? totalOdd : null,
@@ -1666,7 +1724,7 @@ function calculateAccumulator(matches, X, type = "favorite") {
       complete
     };
   });
-  
+
   let refTotalOdd = 1;
   let refComplete = true;
   for (const leg of legs) {
@@ -1677,7 +1735,7 @@ function calculateAccumulator(matches, X, type = "favorite") {
       refComplete = false;
     }
   }
-  
+
   return {
     legs,
     rankedBookmakers,
@@ -1688,7 +1746,7 @@ function calculateAccumulator(matches, X, type = "favorite") {
 function renderAccumulatorView(matches) {
   const X = state.accumulatorX || 4;
   const result = calculateAccumulator(matches, X, state.accumulatorType || "favorite");
-  
+
   if (!result.legs.length) {
     els.accumulatorView.innerHTML = `
       <div class="empty-state">
@@ -1698,25 +1756,25 @@ function renderAccumulatorView(matches) {
     `;
     return;
   }
-  
+
   const ranked = [...result.rankedBookmakers].sort((a, b) => {
     if (!a.complete && b.complete) return 1;
     if (a.complete && !b.complete) return -1;
     if (!a.complete && !b.complete) return 0;
     return b.totalOdd - a.totalOdd;
   });
-  
+
   const bestOdd = ranked[0]?.complete ? ranked[0].totalOdd : null;
   const refOdd = result.referenceParlay;
-  
+
   const cardsHtml = ranked.map((bookie, index) => {
     const rank = index + 1;
     const rankClass = bookie.complete ? `rank-${rank}` : 'incomplete';
     const relPercent = (bookie.complete && bestOdd > 0) ? (bookie.totalOdd / bestOdd) * 100 : 0;
-    
+
     let edgeHtml = '';
     let ticketDataStr = '';
-    
+
     if (bookie.complete) {
       if (refOdd && refOdd > 0) {
         const edgePercent = ((bookie.totalOdd / refOdd) - 1) * 100;
@@ -1726,20 +1784,20 @@ function renderAccumulatorView(matches) {
       } else {
         edgeHtml = `<span class="card-edge neutral">Nema reference</span>`;
       }
-      
+
       const typeTitle = state.accumulatorType === "over25" ? "Akumulator Golova 3+" : "Akumulator Favorita";
       const legTexts = result.legs.map((leg, i) => {
         const oddVal = bookie.legOdds[i] ? bookie.legOdds[i].toFixed(2) : '-';
         const label = state.accumulatorType === "over25" ? "Golovi 3+" : `${leg.team} (${marketLabels[leg.outcome]})`;
-        return `${i+1}. ${leg.match.home} - ${leg.match.away} (${label}): ${oddVal}`;
+        return `${i + 1}. ${leg.match.home} - ${leg.match.away} (${label}): ${oddVal}`;
       });
       ticketDataStr = escapeHtml(`${bookie.name} ${typeTitle} (x${X}):\n` + legTexts.join('\n') + `\nUkupna kvota: ${bookie.totalOdd.toFixed(2)}`);
     } else {
       edgeHtml = `<span class="card-edge neutral">Nepotpuno</span>`;
     }
-    
+
     const oddDisplay = bookie.complete ? bookie.totalOdd.toFixed(2) : 'Nepotpuno';
-    
+
     return `
       <div class="leaderboard-card ${rankClass}">
         <div class="card-header">
@@ -1781,7 +1839,7 @@ function renderAccumulatorView(matches) {
     { id: "soccerbet", name: "SoccerBet" },
     { id: "superbet", name: "Superbet" }
   ];
-  
+
   const legsRowsHtml = result.legs.map((leg, index) => {
     let bestDomOdd = 0;
     let lowestDomOdd = Infinity;
@@ -1797,10 +1855,10 @@ function renderAccumulatorView(matches) {
       const odd = outcomeValue(leg.match.bookmakers?.[bookie.id], leg.outcome);
       const isBest = isValidOdd(odd) && Number(odd) === bestDomOdd;
       const isLowest = isValidOdd(odd) && Number(odd) === lowestDomOdd && bestDomOdd !== lowestDomOdd;
-      const cellClass = odd 
+      const cellClass = odd
         ? (isBest ? 'leg-odd-cell best' : (isLowest ? 'leg-odd-cell lowest' : 'leg-odd-cell'))
         : 'leg-odd-cell missing';
-        
+
       return `<td class="${cellClass}">${formatOdd(odd)}</td>`;
     }).join('');
 
@@ -1853,7 +1911,7 @@ function renderAccumulatorView(matches) {
       </div>
     </div>
   `;
-  
+
   els.accumulatorView.querySelectorAll(".card-copy-btn").forEach(btn => {
     btn.addEventListener("click", async (e) => {
       const text = btn.dataset.ticket;
@@ -2212,11 +2270,22 @@ function renderRecentChangesView() {
 }
 
 function render() {
+  // If there's no data at all (e.g. league just switched), show the loader
+  // and keep the table hidden until data arrives.
+  const hasData = !!state.data;
+  if (els.footballLoader) els.footballLoader.classList.toggle("hidden", hasData);
+  if (els.oddsTableWrap) els.oddsTableWrap.classList.toggle("hidden", !hasData && state.view !== "accumulator" && state.view !== "value-odds" && state.view !== "recent-changes");
+  if (!hasData) {
+    startFootballLoader();
+    return;
+  }
+  stopFootballLoader();
+
   renderCompetitionTabs();
   renderBookmakerToggles();
   const matches = visibleMatches();
   renderView();
-  
+
   if (state.view === "accumulator") {
     renderAccumulatorView(matches);
   } else if (state.view === "value-odds") {
@@ -2229,7 +2298,7 @@ function render() {
     renderHead();
     renderRows(matches);
   }
-  
+
   renderSummary(matches);
   updateValueTicker(matches);
   renderUnmatched();

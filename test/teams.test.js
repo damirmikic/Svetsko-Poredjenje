@@ -191,3 +191,61 @@ test("match keys agree across spelling variants", () => {
     createMatchKey("Bayern Munich", "1. FC Köln", kickoff),
   );
 });
+
+test("resolves team aliases from the user's screenshot", () => {
+  // First screenshot:
+  // 1) Trabzon - Ferencvaros
+  assert.ok(teamSimilarity("Trabzon", "Trabzonspor") >= 0.72);
+  
+  // 2) St. Truiden - Omonia Nicosia
+  assert.ok(teamSimilarity("St. Truiden", "Sint-Truidense") >= 0.72);
+  assert.ok(teamSimilarity("St Truiden", "Sint-Truidense") >= 0.72);
+  assert.ok(teamSimilarity("Sint-Truiden", "Sint-Truidense") >= 0.72);
+  
+  // 3) San Miguel - Colon
+  assert.ok(teamSimilarity("Colon", "Colon de Santa Fe") >= 0.72);
+  
+  // 4) Alajuelense - San Carlos
+  assert.ok(teamSimilarity("LD Alajuelense", "Alajuelense") >= 0.72);
+  assert.ok(teamSimilarity("AD San Carlos", "San Carlos") >= 0.72);
+  
+  // 5) Jagiellonia Bialystok - FC Iberia 1999
+  assert.ok(teamSimilarity("FC Iberia 1999", "Saburtalo Tbilisi") >= 0.72);
+
+  // Second screenshot (BalkanBet):
+  // 1) KF Egnatia Rrogozhine - Lillestroem SK
+  assert.ok(teamSimilarity("KF Egnatia Rrogozhine", "Egnatia") >= 0.72);
+  assert.ok(teamSimilarity("Lillestroem SK", "Lillestrom") >= 0.72);
+  assert.ok(teamSimilarity("Lillestrom SK", "Lillestrom") >= 0.72);
+
+  // 2) Trabzonspor - Ferencvarosi Budapest
+  assert.ok(teamSimilarity("Ferencvarosi Budapest", "Ferencvaros") >= 0.72);
+
+  // 3) St. Truidense VV - AC Omonia Nicosia
+  assert.ok(teamSimilarity("St. Truidense VV", "Sint-Truidense") >= 0.72);
+  assert.ok(teamSimilarity("AC Omonia Nicosia", "Omonia Nicosia") >= 0.72);
+
+  // Third request:
+  // Midtjylland vs HNK Rijeka
+  assert.ok(teamSimilarity("Midtjiland", "Midtjylland") >= 0.72);
+  assert.ok(teamSimilarity("FC Midtjiland", "Midtjylland") >= 0.72);
+  assert.ok(teamSimilarity("Midsiland", "Midtjylland") >= 0.72);
+  assert.ok(teamSimilarity("HNK Rijeka", "Rijeka") >= 0.72);
+
+  // Fourth request:
+  // Benfica vs AGF Aarhus
+  assert.ok(teamSimilarity("Benfika", "Benfica") >= 0.72);
+  assert.ok(teamSimilarity("SL Benfika", "Benfica") >= 0.72);
+  assert.ok(teamSimilarity("Arhus", "AGF Aarhus") >= 0.72);
+  assert.ok(teamSimilarity("AGF Arhus", "AGF Aarhus") >= 0.72);
+  assert.ok(teamSimilarity("AGF Arhus FC", "AGF Aarhus") >= 0.72);
+
+  // Fifth request (MaxBet):
+  // Tromso - Brighton (Eng)
+  assert.ok(teamSimilarity("Tromso", "Tromso") >= 0.72);
+  assert.ok(teamSimilarity("Tromso IL", "Tromso") >= 0.72);
+  assert.ok(teamSimilarity("Tromsoe", "Tromso") >= 0.72);
+  assert.ok(teamSimilarity("Tromsoe IL", "Tromso") >= 0.72);
+  assert.ok(teamSimilarity("Brighton (Eng)", "Brighton and Hove Albion") >= 0.72);
+});
+
