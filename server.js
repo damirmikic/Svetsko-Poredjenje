@@ -247,6 +247,43 @@ const COMPETITIONS = [
     mozzartLeagueTerm: "league",
     btfTerms: ["conference league", "uecl"],
   },
+  {
+    id: "serbia-superliga",
+    label: "Serbia - Super Liga",
+    terms: [
+      "super liga srbije",
+      "superliga srbije",
+      "srbija 1",
+      "serbia 1",
+      "srpska liga",
+      "serbia super liga",
+      "serbian superliga",
+      "serbian super liga",
+      "srbija super liga",
+      "srbija superliga",
+      "mozzart bet super liga",
+      "mozzart bet superliga",
+    ],
+    pinnacleLeagueCode: null,
+    nsoftTournamentId: 438,
+    superbetTournaments: ["1014", "4289", "16013", "16014"],
+    superbetNamePattern: /super\s*liga|srbija\s*1/i,
+    oddsmathLeagueId: 1313,
+    dualsoftCountry: ["Srbija", "Serbia"],
+    dualsoftLeagueName: [
+      "Super Liga",
+      "Superliga",
+      "Srbija 1",
+      "Serbia 1",
+      "Super Liga Srbije",
+      "Srpska Super Liga",
+      "Mozzart Bet Super Liga",
+      "Mozzart Bet Superliga",
+    ],
+    mozzartCountryTerm: "serb",
+    mozzartLeagueTerm: "super",
+    btfTerms: ["super liga", "superliga"],
+  },
 ];
 
 const DEFAULT_COMPETITION_ID = "epl";
@@ -1844,6 +1881,17 @@ async function fetchBookmakerUncached(bookmaker, competition) {
     const codes = Array.isArray(competition.pinnacleLeagueCode)
       ? competition.pinnacleLeagueCode
       : [competition.pinnacleLeagueCode].filter(Boolean);
+
+    if (!codes.length && !PINNACLE_USE_LEAGUES_LOOKUP) {
+      return {
+        bookmaker,
+        status: "configured",
+        url: bookmaker.baseUrl,
+        matches: [],
+        message: `Pinnacle does not offer ${competition.label}.`,
+      };
+    }
+
     const primaryCode = codes[0];
     let url = pinnacleLeagueOddsUrl(primaryCode || PINNACLE_LEAGUE_CODE);
 
@@ -2424,11 +2472,16 @@ export function aggregateMatches(results) {
       if (result === truthResult) continue;
       result.matchedMatches = 0;
       for (const offer of result.matches) {
-        const found = findTruthRow(byMatch, offer, report(result));
-        if (!found) continue;
-
-        attachOffer(found.row, orientOffer(offer, found.reversed));
-        result.matchedMatches += 1;
+        const found = findTruthRow(byMatch, offer, truthResult.bookmaker.sourceOfTruth ? report(result) : null);
+        if (found) {
+          attachOffer(found.row, orientOffer(offer, found.reversed));
+          result.matchedMatches += 1;
+        } else if (!truthResult.bookmaker.sourceOfTruth) {
+          const newRow = makeMatchRow(offer);
+          attachOffer(newRow, offer);
+          byMatch.set(offer.matchKey, newRow);
+          result.matchedMatches += 1;
+        }
       }
     }
   } else {

@@ -20,6 +20,7 @@ Prebacivanje izmedju takmicenja klikom na tab u gornjoj traci:
 | `champions-league` | UEFA Champions League |
 | `europa-league` | UEFA Europa League |
 | `conference-league` | UEFA Conference League |
+| `serbia-superliga` | Serbia – Super Liga |
 
 ## Prikazi (tabovi)
 
