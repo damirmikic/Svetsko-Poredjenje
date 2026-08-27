@@ -247,5 +247,11 @@ test("resolves team aliases from the user's screenshot", () => {
   assert.ok(teamSimilarity("Tromsoe", "Tromso") >= 0.72);
   assert.ok(teamSimilarity("Tromsoe IL", "Tromso") >= 0.72);
   assert.ok(teamSimilarity("Brighton (Eng)", "Brighton and Hove Albion") >= 0.72);
+
+  // Sixth request (MaxBet):
+  // Maccabi TA - Lugano
+  assert.ok(teamSimilarity("Maccabi TA", "Maccabi Tel Aviv") >= 0.72);
+  assert.ok(teamSimilarity("Makabi TA", "Maccabi Tel Aviv") >= 0.72);
+  assert.ok(teamSimilarity("FC Lugano", "Lugano") >= 0.72);
 });
 
