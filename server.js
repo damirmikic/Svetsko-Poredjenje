@@ -100,6 +100,13 @@ const COMPETITIONS = [
     id: "epl",
     label: "England - Premier League",
     terms: ["premier league", "premijer liga", "england 1", "engleska 1"],
+    // "premier league" / "premijer liga" are loose enough to also pull in every
+    // other country's top flight (Egypt, Ghana, Wales...) and England's youth /
+    // cup spin-offs. Veto anything where "premier league" is preceded by a
+    // country word other than England, the PL2 / U-age / cup competitions, and
+    // Bosnia's "Premijer Liga".
+    excludePattern:
+      /\b(?!england\b)(?!english\b)[a-z]{3,}[\s.–-]+premier\s+league\b|premier\s+league\s+(?:2|cup|international|summer)|\bu(?:1[6-9]|2[0-3])\b|\byouth\b|\breserve(?:s)?\b|premijer\s+liga\s+(?:bih|bosne|b&h)/i,
     pinnacleLeagueCode: "england-premier-league",
     nsoftTournamentId: 33,
     superbetTournaments: ["106"],
@@ -288,7 +295,7 @@ const COMPETITIONS = [
 
 const DEFAULT_COMPETITION_ID = "epl";
 
-function getCompetitionById(id) {
+export function getCompetitionById(id) {
   return COMPETITIONS.find((competition) => competition.id === id) || COMPETITIONS.find((competition) => competition.id === DEFAULT_COMPETITION_ID);
 }
 
@@ -475,7 +482,13 @@ async function fetchBtfOdds(competition) {
         continue;
       }
       const currentLeagueLower = currentLeague.toLocaleLowerCase("sr-RS");
-      if (row.includes('class="mw"') && btfTerms.some((term) => currentLeagueLower.includes(term))) {
+      const btfLeagueExcluded =
+        competition?.excludePattern && competition.excludePattern.test(currentLeagueLower);
+      if (
+        row.includes('class="mw"') &&
+        !btfLeagueExcluded &&
+        btfTerms.some((term) => currentLeagueLower.includes(term))
+      ) {
         let home = null;
         let away = null;
         const aTagMatch = row.match(/<td class="event"><a[^>]*>(.*?)<\/a><\/td>/);
@@ -660,6 +673,16 @@ function textIncludesTerms(value, terms) {
   return (terms || []).some((term) => haystack.includes(term));
 }
 
+// Loose substring terms like "premier league" also match "Egypt Premier League",
+// "Premier League 2", "U21 Premier League" etc. A competition can add an
+// `excludePattern` (a non-global RegExp) to veto those look-alikes. Kept separate
+// from `terms` so every feed's term-based join runs the same veto.
+export function matchesCompetitionTermFilters(value, competition) {
+  if (!textIncludesTerms(value, competition.terms)) return false;
+  if (competition.excludePattern && competition.excludePattern.test(String(value || ""))) return false;
+  return true;
+}
+
 function textIncludesWomensCompetition(value) {
   const normalized = ` ${String(value || "")
     .toLocaleLowerCase("sr-RS")
@@ -680,7 +703,7 @@ function matchesCompetitionTerms(match, competition) {
     match.away,
   ].join(" ");
 
-  return textIncludesTerms(joined, competition.terms) && !textIncludesWomensCompetition(joined);
+  return matchesCompetitionTermFilters(joined, competition) && !textIncludesWomensCompetition(joined);
 }
 
 function matchesDualsoftCompetition(match, competition) {
@@ -1226,7 +1249,8 @@ function normalizePinnacleMatches(bookmaker, eventsPayload, leaguesPayload, comp
       const league = leaguesById.get(String(event.leagueId || event.league?.id));
       const leagueName = event.leagueName || event.league?.name || league?.name || league?.englishName;
       const [home, away] = getPinnacleTeamNames(event);
-      const isMatch = hasLeagueFilter || textIncludesTerms([leagueName, home, away].join(" "), competition.terms);
+      const isMatch =
+        hasLeagueFilter || matchesCompetitionTermFilters([leagueName, home, away].join(" "), competition);
       return (
         isMatch &&
         !textIncludesWomensCompetition([leagueName, home, away].join(" ")) &&
@@ -1366,7 +1390,7 @@ function getPinnacleCompetitionLeagueIds(leaguesPayload, competition) {
     .filter(
       (league) =>
         targetCodes.includes(String(league.leagueCode)) ||
-        textIncludesTerms([league.name, league.englishName, league.leagueCode].join(" "), competition.terms || []),
+        matchesCompetitionTermFilters([league.name, league.englishName, league.leagueCode].join(" "), competition),
     )
     .map((league) => String(league.id))
     .filter(Boolean);
@@ -1477,6 +1501,7 @@ function matchesMozzartCompetition(item, competition) {
   const competitionName = String(item.competition?.name || "");
   const joined = [competitionName, home, away].join(" ");
   if (textIncludesWomensCompetition(joined)) return false;
+  if (competition.excludePattern && competition.excludePattern.test(joined)) return false;
 
   if (textIncludesTerms(joined, competition.terms || [])) return true;
 
