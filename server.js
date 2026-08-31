@@ -571,6 +571,11 @@ function dualsoftOfferUrl(baseUrl) {
     annex: "0",
     desktopVersion: DUALSOFT_VERSION,
     locale: LOCALE,
+    // Cache-buster: the offer URL is otherwise byte-identical on every call,
+    // so the bookmaker's CDN edge cache (esp. merkurxtip.rs) keeps serving a
+    // stale snapshot until its own TTL expires - odds changes then arrive
+    // minutes late. Unique param per request forces a fresh origin hit.
+    _: String(Date.now()),
   });
   return `${baseUrl}/restapi/offer/${LOCALE}/sport/S/mob?${params.toString()}`;
 }
@@ -974,7 +979,7 @@ function normalizeDualsoftMatches(bookmaker, payload, competition) {
 }
 
 async function enrichDualsoftWithQualifyOdds(bookmaker, matches) {
-  const params = new URLSearchParams({ annex: "0", mobileVersion: "1.23.9", locale: LOCALE });
+  const params = new URLSearchParams({ annex: "0", mobileVersion: "1.23.9", locale: LOCALE, _: String(Date.now()) });
   await Promise.all(
     matches.map(async (match) => {
       if (!match.externalId) return;
@@ -1314,6 +1319,9 @@ async function fetchJson(url, timeoutMs = FEED_TIMEOUT_MS) {
       headers: {
         accept: "application/json,text/plain,*/*",
         "accept-language": "sr,en;q=0.9",
+        // Live odds feed - never accept an intermediary/CDN-cached response.
+        "cache-control": "no-cache",
+        pragma: "no-cache",
         "user-agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125 Safari/537.36",
       },
