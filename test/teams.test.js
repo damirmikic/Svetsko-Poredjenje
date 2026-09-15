@@ -253,5 +253,11 @@ test("resolves team aliases from the user's screenshot", () => {
   assert.ok(teamSimilarity("Maccabi TA", "Maccabi Tel Aviv") >= 0.72);
   assert.ok(teamSimilarity("Makabi TA", "Maccabi Tel Aviv") >= 0.72);
   assert.ok(teamSimilarity("FC Lugano", "Lugano") >= 0.72);
+
+  // Seventh request – Deportivo La Coruna feed spellings:
+  // Superbet: "Deportivo de A Coruna", Balkanbet: "Dep.A Coruna", Soccerbet: "Deportivo A Coruna"
+  assert.ok(teamSimilarity("Deportivo de A Coruna", "Deportivo La Coruna") >= 0.72);
+  assert.ok(teamSimilarity("Dep.A Coruna", "Deportivo La Coruna") >= 0.72);
+  assert.ok(teamSimilarity("Deportivo A Coruna", "Deportivo La Coruna") >= 0.72);
 });
 
