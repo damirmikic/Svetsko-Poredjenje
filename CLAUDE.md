@@ -90,6 +90,5 @@ snapshot interval, configurable threshold, default 3%).
 
 ### Config
 
-Environment variables (see `.env.example`) configure feed URLs, timeouts, and the optional direct PS3838
-(Pinnacle) API integration (`PS3838_ENABLED`, credentials, caching intervals). Local secrets go in `.env`
+Environment variables (see `.env.example`) configure feed URLs and timeouts. Local secrets go in `.env`
 (gitignored); never commit real credentials there.

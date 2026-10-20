@@ -105,18 +105,6 @@ Lokalne kredencijale drzi u `.env` fajlu. `.env` je ignorisan u git-u; koristi `
 | `PINNACLE_VERSION` | `0` | Version parametar |
 | `FEED_TIMEOUT_MS` | `4000` (lokalno) / `6000` (Netlify) | Timeout po feedu |
 
-### PS3838 (opcioni, za direktni Pinnacle API)
-
-| Promenljiva | Default | Opis |
-|-------------|---------|------|
-| `PS3838_ENABLED` | `false` | Ukljuci PS3838 feed |
-| `PS3838_API_BASE` | `https://api.ps3838.com` | API base |
-| `PS3838_USERNAME` | — | API korisnik |
-| `PS3838_PASSWORD` | — | API lozinka |
-| `PS3838_SPORT_ID` | `29` | Sport ID |
-| `PS3838_LEAGUE_IDS` | — | Comma-separated lista liga |
-| `PS3838_ODDS_FORMAT` | `Decimal` | Format kvota |
-
 ## API
 
 ### `GET /api/health`
