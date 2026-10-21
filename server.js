@@ -77,6 +77,11 @@ const WOMENS_COMPETITION_TERMS = [
   " w ",
 ];
 
+// UEFA Youth League (U19) shares "Champions League" in its name on most feeds
+// (e.g. Mozzart's "UEFA Champions League Youth"), so it leaks into the senior
+// UEFA competitions unless vetoed explicitly.
+const UEFA_YOUTH_EXCLUDE_PATTERN = /\byouth\b|\bu(?:1[6-9]|2[0-3])\b|\bjunior(?:s|i)?\b|\bmladih\b|\bomladin/i;
+
 const COMPETITIONS = [
   {
     id: "world-cup",
@@ -193,6 +198,7 @@ const COMPETITIONS = [
       "Liga Šampiona - Kvalifikacije",
       "Liga Šampiona (Kval.)",
     ],
+    excludePattern: UEFA_YOUTH_EXCLUDE_PATTERN,
     mozzartCountryTerm: "champions",
     mozzartLeagueTerm: "league",
     btfTerms: ["champions league", "ucl"],
@@ -220,6 +226,7 @@ const COMPETITIONS = [
       "Liga Europe",
       "UEFA Liga Europe",
     ],
+    excludePattern: UEFA_YOUTH_EXCLUDE_PATTERN,
     mozzartCountryTerm: "europa",
     mozzartLeagueTerm: "league",
     btfTerms: ["europa league", "uel"],
@@ -250,6 +257,7 @@ const COMPETITIONS = [
       "UEFA Liga Konferencije",
       "Liga Konferencije",
     ],
+    excludePattern: UEFA_YOUTH_EXCLUDE_PATTERN,
     mozzartCountryTerm: "conference",
     mozzartLeagueTerm: "league",
     btfTerms: ["conference league", "uecl"],
