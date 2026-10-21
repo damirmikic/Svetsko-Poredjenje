@@ -17,6 +17,7 @@ const publicDir = join(projectDir, "public");
 loadLocalEnv();
 
 const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || "127.0.0.1";
 const DUALSOFT_VERSION = process.env.DUALSOFT_VERSION || "2.44.3.18";
 const LOCALE = "sr";
 const IS_NETLIFY = Boolean(process.env.NETLIFY);
@@ -2908,7 +2909,7 @@ if (process.argv[1] && normalize(process.argv[1]) === normalize(join(projectDir,
     throw error;
   });
 
-  server.listen(PORT, () => {
-    console.log(`Fudbal Kvote running on http://localhost:${PORT}`);
+  server.listen(PORT, HOST, () => {
+    console.log(`Fudbal Kvote running on http://${HOST}:${PORT}`);
   });
 }
