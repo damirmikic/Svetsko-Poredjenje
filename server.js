@@ -1396,6 +1396,10 @@ async function fetchPinnacleJson(url) {
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${text.slice(0, 180)}`);
     }
+    // Pinnacle answers 200 with an empty body for a league that has no events
+    // right now (e.g. the UEFA qualifiers league out of season). Treat it as an
+    // empty league so it doesn't fail the sibling league fetched alongside it.
+    if (!text.trim()) return {};
     return parseJsonPayload(text);
   } catch (error) {
     if (error.name === "AbortError") throw new Error(`Request timed out after ${FEED_TIMEOUT_MS} ms.`);
