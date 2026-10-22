@@ -24,6 +24,7 @@ const pinnacleLeagueCodeByCompetition = {
   "ligue-1": "france-ligue-1",
   "serie-a": "italy-serie-a",
   laliga: "spain-la-liga",
+  "serbia-superliga": "serbia-super-liga",
   // Same two-league split as the server's COMPETITIONS entries: outside the
   // summer the qualifiers league is empty and the fixtures live in the main one.
   "champions-league": ["uefa-champions-league-qualifiers", "uefa-champions-league"],
