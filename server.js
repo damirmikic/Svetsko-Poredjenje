@@ -78,10 +78,11 @@ const WOMENS_COMPETITION_TERMS = [
   " w ",
 ];
 
-// UEFA Youth League (U19) shares "Champions League" in its name on most feeds
-// (e.g. Mozzart's "UEFA Champions League Youth"), so it leaks into the senior
-// UEFA competitions unless vetoed explicitly.
-const UEFA_YOUTH_EXCLUDE_PATTERN = /\byouth\b|\bu(?:1[6-9]|2[0-3])\b|\bjunior(?:s|i)?\b|\bmladih\b|\bomladin/i;
+// The UEFA Youth League (U19, e.g. Mozzart's "UEFA Champions League Youth") and
+// other confederations' club cups ("CAF Liga Šampiona", "AFC Champions League")
+// share the senior UEFA competitions' names, so they leak in unless vetoed.
+const UEFA_EXCLUDE_PATTERN =
+  /\byouth\b|\bu(?:1[6-9]|2[0-3])\b|\bjunior(?:s|i)?\b|\bmladih\b|\bomladin|\b(?:caf|afc|concacaf|conmebol|ofc)\b|\bafri|\basia|\bazij|\barab/i;
 
 const COMPETITIONS = [
   {
@@ -199,7 +200,7 @@ const COMPETITIONS = [
       "Liga Šampiona - Kvalifikacije",
       "Liga Šampiona (Kval.)",
     ],
-    excludePattern: UEFA_YOUTH_EXCLUDE_PATTERN,
+    excludePattern: UEFA_EXCLUDE_PATTERN,
     mozzartCountryTerm: "champions",
     mozzartLeagueTerm: "league",
     btfTerms: ["champions league", "ucl"],
@@ -227,7 +228,7 @@ const COMPETITIONS = [
       "Liga Europe",
       "UEFA Liga Europe",
     ],
-    excludePattern: UEFA_YOUTH_EXCLUDE_PATTERN,
+    excludePattern: UEFA_EXCLUDE_PATTERN,
     mozzartCountryTerm: "europa",
     mozzartLeagueTerm: "league",
     btfTerms: ["europa league", "uel"],
@@ -258,7 +259,7 @@ const COMPETITIONS = [
       "UEFA Liga Konferencije",
       "Liga Konferencije",
     ],
-    excludePattern: UEFA_YOUTH_EXCLUDE_PATTERN,
+    excludePattern: UEFA_EXCLUDE_PATTERN,
     mozzartCountryTerm: "conference",
     mozzartLeagueTerm: "league",
     btfTerms: ["conference league", "uecl"],
@@ -496,7 +497,7 @@ async function fetchBtfOdds(competition) {
       if (
         row.includes('class="mw"') &&
         !btfLeagueExcluded &&
-        btfTerms.some((term) => currentLeagueLower.includes(term))
+        btfTerms.some((term) => includesWholeTerm(currentLeagueLower, term))
       ) {
         let home = null;
         let away = null;
@@ -682,9 +683,16 @@ function textIncludesWorldCup(value) {
   return textIncludesTerms(value, WORLD_CUP_TERMS);
 }
 
+// Terms match on whole words only: a plain substring check let the "uel"
+// abbreviation hit "Venezuela", "Teruel", "Alajuelense", "San Miguel"...
+function includesWholeTerm(haystack, term) {
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "u").test(haystack);
+}
+
 function textIncludesTerms(value, terms) {
   const haystack = String(value || "").toLocaleLowerCase("sr-RS");
-  return (terms || []).some((term) => haystack.includes(term));
+  return (terms || []).some((term) => includesWholeTerm(haystack, term));
 }
 
 // Loose substring terms like "premier league" also match "Egypt Premier League",
