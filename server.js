@@ -128,6 +128,9 @@ const COMPETITIONS = [
     id: "bundesliga",
     label: "Germany - Bundesliga",
     terms: ["bundesliga", "germany 1", "nemacka 1", "nemačka 1"],
+    // "bundesliga" alone also pulls in Germany's 2. Bundesliga and Austria's
+    // Bundesliga (Mozzart "Austria - Bundesliga", MerkurXtip "2. Bundesliga").
+    excludePattern: /\b2\.?\s*bundesliga|bundesliga\s*2\b|\b(?:germany|nema[cč]ka)\s*2\b|\baustri|\bösterreich|\bosterreich/i,
     pinnacleLeagueCode: "germany-bundesliga",
     nsoftTournamentId: 87,
     superbetTournaments: ["245"],
@@ -156,6 +159,8 @@ const COMPETITIONS = [
     id: "serie-a",
     label: "Italy - Serie A",
     terms: ["serie a", "italy 1", "italija 1"],
+    // Brazil's top flight is also "Serie A" (Mozzart "Brazil - Serie A").
+    excludePattern: /\bbra[sz]il/i,
     pinnacleLeagueCode: "italy-serie-a",
     nsoftTournamentId: 51,
     superbetTournaments: ["104"],
@@ -170,6 +175,11 @@ const COMPETITIONS = [
     id: "laliga",
     label: "Spain - LaLiga",
     terms: ["la liga", "laliga", "spain 1", "spanija 1", "španija 1", "primera"],
+    // "la liga" / "primera" also cover Spain's LaLiga 2 and Primera RFEF, and
+    // every Latin American "Primera Division". Mozzart's own name for LaLiga is
+    // "Spain - Primera Division", so "primera division" itself can't be vetoed.
+    excludePattern:
+      /\bla\s*liga\s*2\b|\b(?:spain|spanija|španija)\s*2\b|\bsegunda|\bhypermotion|\brfef\b|\b(?:argentin|chile|paragua|urugua|colombi|peru|bolivi|ecuador|venezuel|mexic|costa\s+rica|salvador|hondur|guatemal|nicaragu|panam)/i,
     pinnacleLeagueCode: "spain-la-liga",
     nsoftTournamentId: 15,
     superbetTournaments: ["98"],
@@ -748,6 +758,12 @@ function matchesDualsoftCompetition(match, competition) {
     const matchesName = allowedNames.includes(name);
 
     if (matchesCountry && matchesName) return true;
+    // Group token names another country and the league name doesn't name ours
+    // either: MerkurXtip lists Ethiopia, Russia, Bosnia... all as plain
+    // "Premier League", Chile/Paraguay as "Primera Division". That's another
+    // country's league, so don't let the loose terms fallback take it. MaxBet's
+    // "ENGLAND 1" under the generic "Top Lige" group still passes on its name.
+    if (token && !matchesCountry && !allowedCountries.some((country) => name.includes(country))) return false;
 
     // Fallback: if general competition terms match (and not women's), accept it
     if (competition.terms?.length && matchesCompetitionTerms(match, competition)) {
