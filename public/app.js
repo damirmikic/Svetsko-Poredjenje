@@ -24,9 +24,11 @@ const pinnacleLeagueCodeByCompetition = {
   "ligue-1": "france-ligue-1",
   "serie-a": "italy-serie-a",
   laliga: "spain-la-liga",
-  "champions-league": "uefa-champions-league-qualifiers",
-  "europa-league": "uefa-europa-league-qualifiers",
-  "conference-league": "uefa-conference-league-qualifiers",
+  // Same two-league split as the server's COMPETITIONS entries: outside the
+  // summer the qualifiers league is empty and the fixtures live in the main one.
+  "champions-league": ["uefa-champions-league-qualifiers", "uefa-champions-league"],
+  "europa-league": ["uefa-europa-league-qualifiers", "uefa-europa-league"],
+  "conference-league": ["uefa-conference-league-qualifiers", "uefa-conference-league"],
 };
 const matchWinnerOutcomes = ["home", "draw", "away"];
 const totalGoalsOutcomes = ["over25", "under25"];
@@ -1162,32 +1164,44 @@ async function hydratePinnacleFromBrowser() {
   const needsHydration = (requestData?.matches || []).some((match) => !isPinnacleComplete(match));
   if (!requestData || !needsHydration) return false;
 
-  const params = new URLSearchParams({
-    sportId: String(pinnacleBrowserSportId),
-    oddsType: "1",
-    version: "0",
-    timeStamp: String(Date.now()),
-    periodNum: "-1",
-    eSportCode: "",
-    leagueCode: pinnacleLeagueCodeByCompetition[requestCompetitionId] || pinnacleLeagueCodeByCompetition[defaultCompetitionId],
-    isHlE: "true",
-    isLive: "false",
-    eventType: "0",
-    locale: "en_US",
-    _: String(Date.now()),
-    withCredentials: "true",
-  });
+  const leagueCodes = [].concat(
+    pinnacleLeagueCodeByCompetition[requestCompetitionId] || pinnacleLeagueCodeByCompetition[defaultCompetitionId],
+  );
 
-  const response = await fetch(`${pinnacleBrowserBase}/odds/league?${params.toString()}`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Pinnacle browser fetch HTTP ${response.status}`);
-  const payload = await response.json();
+  const fetchLeagueEvents = async (leagueCode) => {
+    const params = new URLSearchParams({
+      sportId: String(pinnacleBrowserSportId),
+      oddsType: "1",
+      version: "0",
+      timeStamp: String(Date.now()),
+      periodNum: "-1",
+      eSportCode: "",
+      leagueCode,
+      isHlE: "true",
+      isLive: "false",
+      eventType: "0",
+      locale: "en_US",
+      _: String(Date.now()),
+      withCredentials: "true",
+    });
+
+    const response = await fetch(`${pinnacleBrowserBase}/odds/league?${params.toString()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Pinnacle browser fetch HTTP ${response.status}`);
+    // Pinnacle answers 200 with an empty body for a league that has no
+    // events right now (e.g. the qualifiers league out of season).
+    const body = await response.text();
+    return body.trim() ? getPinnacleEvents(JSON.parse(body)) : [];
+  };
+
+  const events = (await Promise.all(leagueCodes.map(fetchLeagueEvents))).flat();
 
   // This runs unawaited after render() now, so a fast follow-up tab switch
   // can replace state.data before this response lands - patching a payload
   // nobody is looking at anymore would show the wrong competition's odds.
   if (state.data !== requestData) return false;
+  if (!events.length) return false;
 
-  const offers = new Map(getPinnacleEvents(payload).map((event) => {
+  const offers = new Map(events.map((event) => {
     const offer = normalizePinnacleOffer(event);
     return [offer.matchKey, offer];
   }));
