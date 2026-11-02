@@ -2182,3 +2182,37 @@ select,
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+.vo-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.vo-filter-label {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.vo-chip {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.vo-chip:hover {
+  border-color: var(--green);
+}
+
+.vo-chip.active {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}

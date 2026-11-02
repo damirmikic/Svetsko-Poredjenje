@@ -50,6 +50,7 @@ const marketLabels = {
 const state = {
   data: null,
   enabledBookmakers: new Set(bookmakerOrder),
+  valueOddsBookmakers: new Set(),
   search: "",
   competitionId: null,
   view: "all",
@@ -242,110 +243,6 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
-function showOddsChangeNotification(changes) {
-  let backdrop = document.querySelector(".notification-backdrop");
-  if (!backdrop) {
-    backdrop = document.createElement("div");
-    backdrop.className = "notification-backdrop";
-    backdrop.innerHTML = `
-      <div class="notification-modal">
-        <div class="notification-header">
-          <span class="notification-title">Promena Kvota</span>
-          <button class="notification-close" type="button" aria-label="Zatvori">&times;</button>
-        </div>
-        <div class="notification-body">
-          <div class="notification-subtitle">Detektovane su promene kvota:</div>
-          <div class="notification-list"></div>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(backdrop);
-
-    const closeBtn = backdrop.querySelector(".notification-close");
-    closeBtn.addEventListener("click", () => {
-      backdrop.classList.remove("show");
-    });
-    backdrop.addEventListener("click", (e) => {
-      if (e.target === backdrop) {
-        backdrop.classList.remove("show");
-      }
-    });
-    backdrop.addEventListener("click", async (e) => {
-      const copyButton = e.target.closest(".notification-copy");
-      if (!copyButton) return;
-
-      e.stopPropagation();
-      const text = copyButton.dataset.copy || "";
-      if (!text) return;
-
-      try {
-        await copyTextToClipboard(text);
-        copyButton.textContent = "Copied";
-        copyButton.classList.add("is-copied");
-        window.setTimeout(() => {
-          copyButton.textContent = "Copy";
-          copyButton.classList.remove("is-copied");
-        }, 1200);
-      } catch {
-        copyButton.textContent = "Failed";
-        window.setTimeout(() => {
-          copyButton.textContent = "Copy";
-        }, 1200);
-      }
-    });
-  }
-
-  const list = backdrop.querySelector(".notification-list");
-  list.innerHTML = changes
-    .map((change) => {
-      const match = state.data?.matches?.find((m) => m.matchKey === change.matchKey);
-      if (!match) return "";
-
-      const bName = getBookmakerName(change.bookmakerId);
-      const label = getOutcomeToastLabel(match, change.outcome);
-      const isUp = change.newValue > change.oldValue;
-      const badgeClass = isUp ? "up" : "down";
-      const icon = isUp ? "↑" : "↓";
-
-      const matchup = `${match.home} vs ${match.away}`;
-      const escapedMatchup = escapeHtml(matchup);
-
-      return `
-        <div class="notification-item">
-          <div class="notification-match-row">
-            <div class="notification-match">${escapedMatchup}</div>
-            <button class="notification-copy" type="button" data-copy="${escapedMatchup}">Copy</button>
-          </div>
-          <div class="notification-detail">
-            <span class="notification-meta">${bName} · ${label}</span>
-            <div class="notification-change-box">
-              <span class="notification-odd-transition">${change.oldValue.toFixed(2)} &rarr;</span>
-              <span class="notification-badge ${badgeClass}">${icon} ${change.newValue.toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
-            <span class="notification-meta">${bName} · ${label}</span>
-            <div class="notification-change-box">
-              <span class="notification-odd-transition">${change.oldValue.toFixed(2)} &rarr;</span>
-              <span class="notification-badge ${badgeClass}">${icon} ${change.newValue.toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
-      `;
-    })
-    .filter(Boolean)
-    .join("");
-
-  backdrop.classList.add("show");
-
-  if (backdrop.hideTimeout) {
-    clearTimeout(backdrop.hideTimeout);
-  }
-  backdrop.hideTimeout = setTimeout(() => {
-    backdrop.classList.remove("show");
-  }, 15000);
-}
-
 function trackChangedOdds(previousSnapshot, nextSnapshot) {
   const now = Date.now();
   const changes = [];
@@ -408,10 +305,6 @@ function trackChangedOdds(previousSnapshot, nextSnapshot) {
   }
 
   state.oddsSnapshot = nextSnapshot;
-
-  if (previousSnapshot.size > 0 && changes.length > 0) {
-    showOddsChangeNotification(changes);
-  }
 }
 
 function isOddPulsing(matchKey, bookmakerId, outcome) {
@@ -2087,6 +1980,25 @@ function renderValueOddsView(matches) {
 
   const outcomesToTest = ["home", "draw", "away", "over25", "under25", "qualifyHome", "qualifyAway"];
 
+  // Prazan skup = sve kladionice
+  const selectedBookmakers = state.valueOddsBookmakers;
+  const testedBookmakers = enabledDomesticBookmakers.filter(
+    (id) => selectedBookmakers.size === 0 || selectedBookmakers.has(id)
+  );
+
+  const filterHtml = `
+    <div class="vo-filter" id="valueOddsFilter">
+      <span class="vo-filter-label">Kladionice:</span>
+      <button type="button" class="vo-chip ${selectedBookmakers.size === 0 ? "active" : ""}" data-vo-bookmaker="">Sve</button>
+      ${enabledDomesticBookmakers
+        .map(
+          (id) =>
+            `<button type="button" class="vo-chip ${selectedBookmakers.has(id) ? "active" : ""}" data-vo-bookmaker="${id}">${escapeHtml(getBookmakerName(id))}</button>`
+        )
+        .join("")}
+    </div>
+  `;
+
   for (const match of matches) {
     const refOddsEntry = match.bookmakers?.pinnacle_shin || match.bookmakers?.pinnacle;
     if (!refOddsEntry) continue;
@@ -2095,7 +2007,7 @@ function renderValueOddsView(matches) {
       const refOdd = outcomeValue(refOddsEntry, outcome);
       if (!isValidOdd(refOdd)) continue;
 
-      for (const bookieId of enabledDomesticBookmakers) {
+      for (const bookieId of testedBookmakers) {
         const bookieEntry = match.bookmakers?.[bookieId];
         if (!bookieEntry || bookieEntry.isReference) continue;
         const bookieOdd = outcomeValue(bookieEntry, outcome);
@@ -2128,6 +2040,7 @@ function renderValueOddsView(matches) {
 
   if (valueBets.length === 0) {
     els.valueOddsView.innerHTML = `
+      ${filterHtml}
       <div class="empty-state">
         <div class="empty-state-icon">🎯</div>
         <strong>Nema kvota iznad zadatog praga (+${state.noVigLimitPercent}%)</strong>
@@ -2166,6 +2079,7 @@ function renderValueOddsView(matches) {
     .join("");
 
   els.valueOddsView.innerHTML = `
+    ${filterHtml}
     <div class="vo-summary-banner">
       <div>
         <span class="vo-summary-label">Pronađeno vrednosnih kvota:</span>
@@ -2199,6 +2113,18 @@ function renderValueOddsView(matches) {
       </table>
     </div>
   `;
+}
+
+function bindValueOddsFilter() {
+  els.valueOddsView?.addEventListener("click", (event) => {
+    const chip = event.target.closest("[data-vo-bookmaker]");
+    if (!chip) return;
+    const id = chip.dataset.voBookmaker;
+    if (!id) state.valueOddsBookmakers.clear();
+    else if (state.valueOddsBookmakers.has(id)) state.valueOddsBookmakers.delete(id);
+    else state.valueOddsBookmakers.add(id);
+    render();
+  });
 }
 
 function renderRecentChangesView() {
@@ -2320,6 +2246,8 @@ function render() {
 }
 
 els.refreshButton.addEventListener("click", loadOdds);
+bindValueOddsFilter();
+
 els.searchInput.addEventListener("input", (event) => {
   state.search = event.target.value;
   render();
