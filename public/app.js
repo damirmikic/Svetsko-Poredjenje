@@ -1,4 +1,5 @@
 import { createMatchKey, toTimestamp } from "./shared/teams.js";
+import { computeBetslip } from "./shared/betslip.js";
 
 const bookmakerOrder = [
   "pinnacle_shin",
@@ -47,6 +48,11 @@ const marketLabels = {
   qualifyAway: "2",
 };
 
+const betslipStorageKey = "betslip:v1";
+// Pinnacle no-vig is a reference, not a real bookmaker; Betfair Lay odds are
+// lay prices. Neither can be backed, so they are left out of the ranking.
+const betslipExcludedBookmakers = new Set([primaryReferenceBookmaker, "betfair_lay"]);
+
 const state = {
   data: null,
   enabledBookmakers: new Set(bookmakerOrder),
@@ -63,6 +69,8 @@ const state = {
   accumulatorX: 4,
   accumulatorType: "favorite",
   recentChangesHistory: [],
+  betslip: loadBetslip(),
+  betslipOpen: false,
 };
 const oddsRefreshMs = 30_000;
 const oddsPulseMs = 10_000;
@@ -152,6 +160,10 @@ const els = {
   unmatchedList: document.querySelector("#unmatchedList"),
   footballLoader: document.querySelector("#footballLoader"),
   footballLoaderMsg: document.querySelector("#footballLoaderMsg"),
+  betslip: document.querySelector("#betslip"),
+  betslipToggle: document.querySelector("#betslipToggle"),
+  betslipCount: document.querySelector("#betslipCount"),
+  betslipBody: document.querySelector("#betslipBody"),
 };
 
 function formatOdd(value) {
@@ -1388,7 +1400,9 @@ function renderRows(matches) {
                 `;
               }
 
-              return `<td class="${className}">
+              const slipKey = betslipKey(match.matchKey, outcome);
+              const inSlip = state.betslip.some((item) => item.key === slipKey);
+              return `<td class="${className}${inSlip ? " in-slip" : ""}" data-match-key="${escapeHtml(match.matchKey)}" data-outcome="${outcome}" title="Klikni da dodas na tiket">
                 <span class="odd-value">${formatOdd(value)}</span>${moveArrow}
                 ${moneyFlowHtml}
               </td>`;
@@ -2210,6 +2224,179 @@ function renderRecentChangesView() {
   `;
 }
 
+// ---------------------------------------------------------------------------
+// Betslip: user-picked selections, combined odds per bookmaker.
+// ---------------------------------------------------------------------------
+
+function loadBetslip() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(betslipStorageKey) || "[]");
+    return Array.isArray(parsed) ? parsed.filter((item) => item && item.key && item.odds) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveBetslip() {
+  try {
+    localStorage.setItem(betslipStorageKey, JSON.stringify(state.betslip));
+  } catch {
+    // storage unavailable (private mode etc.) - slip just won't persist
+  }
+}
+
+function betslipKey(matchKey, outcome) {
+  return `${matchKey}|${outcome}`;
+}
+
+function betslipOddsFor(match, outcome) {
+  const odds = {};
+  for (const [bookmakerId, entry] of Object.entries(match.bookmakers || {})) {
+    const value = Number(outcomeValue(entry, outcome));
+    if (isValidOdd(value)) odds[bookmakerId] = value;
+  }
+  return odds;
+}
+
+function betslipSelectionLabel(match, outcome) {
+  if (outcome === "over25" || outcome === "under25") return `Golovi ${goalsOutcomeLabel(match, outcome)}`;
+  if (outcome === "qualifyHome") return "1 ide dalje";
+  if (outcome === "qualifyAway") return "2 ide dalje";
+  return `Konacan ishod ${marketLabels[outcome]}`;
+}
+
+function toggleBetslipSelection(matchKey, outcome) {
+  const match = (state.data?.matches || []).find((item) => item.matchKey === matchKey);
+  if (!match) return;
+  const key = betslipKey(matchKey, outcome);
+  const existing = state.betslip.findIndex((item) => item.key === key);
+  if (existing >= 0) {
+    state.betslip.splice(existing, 1);
+  } else {
+    // One pick per match per market group: picking "2" replaces an earlier "1".
+    const group = (o) => (matchWinnerOutcomes.includes(o) ? "1x2" : totalGoalsOutcomes.includes(o) ? "goals" : "qualify");
+    state.betslip = state.betslip.filter(
+      (item) => !(item.matchKey === matchKey && group(item.outcome) === group(outcome)),
+    );
+    state.betslip.push({
+      key,
+      matchKey,
+      outcome,
+      home: match.home,
+      away: match.away,
+      leagueName: match.leagueName,
+      kickOffTime: match.kickOffTime,
+      label: betslipSelectionLabel(match, outcome),
+      odds: betslipOddsFor(match, outcome),
+    });
+    state.betslipOpen = true;
+  }
+  saveBetslip();
+  render();
+}
+
+// Refresh stored odds for selections whose match is in the current payload.
+// Selections from other competitions keep the last odds seen.
+function syncBetslipOdds() {
+  if (!state.betslip.length) return;
+  const byKey = new Map((state.data?.matches || []).map((match) => [match.matchKey, match]));
+  let changed = false;
+  for (const item of state.betslip) {
+    const match = byKey.get(item.matchKey);
+    if (!match) continue;
+    const odds = betslipOddsFor(match, item.outcome);
+    if (Object.keys(odds).length) {
+      item.odds = odds;
+      item.label = betslipSelectionLabel(match, item.outcome);
+      changed = true;
+    }
+  }
+  if (changed) saveBetslip();
+}
+
+function renderBetslip() {
+  if (!els.betslip) return;
+  const count = state.betslip.length;
+  els.betslipCount.textContent = String(count);
+  els.betslip.classList.toggle("is-open", state.betslipOpen);
+  els.betslip.classList.toggle("has-items", count > 0);
+  if (!state.betslipOpen) {
+    els.betslipBody.innerHTML = "";
+    return;
+  }
+
+  if (!count) {
+    els.betslipBody.innerHTML = `<p class="betslip-empty">Klikni na kvotu u tabeli da dodas mec na tiket.</p>`;
+    return;
+  }
+
+  const knownBookmakers = new Set([
+    ...(state.data?.bookmakers || []).map((b) => b.id),
+    ...state.betslip.flatMap((item) => Object.keys(item.odds || {})),
+  ]);
+  const rankable = bookmakerOrder.filter(
+    (id) => knownBookmakers.has(id) && state.enabledBookmakers.has(id) && !betslipExcludedBookmakers.has(id),
+  );
+  const result = computeBetslip(state.betslip, rankable);
+  const fair = computeBetslip(state.betslip, [primaryReferenceBookmaker]).best;
+  const bestLegByKey = new Map((result.bestCombo?.legs || []).map((leg) => [leg.key, leg]));
+
+  const legsHtml = state.betslip
+    .map((item) => {
+      const bestLeg = bestLegByKey.get(item.key)
+        || rankable
+          .map((id) => ({ bookmakerId: id, value: Number(item.odds?.[id]) }))
+          .filter((leg) => isValidOdd(leg.value))
+          .sort((a, b) => b.value - a.value)[0];
+      return `
+        <li class="betslip-leg">
+          <div>
+            <span class="betslip-leg-time">${formatTime(item.kickOffTime)} · ${escapeHtml(item.leagueName || "")}</span>
+            <strong>${escapeHtml(item.home)} - ${escapeHtml(item.away)}</strong>
+            <span class="betslip-leg-pick">${escapeHtml(item.label)}</span>
+          </div>
+          <div class="betslip-leg-best">
+            ${bestLeg ? `<strong>${formatOdd(bestLeg.value)}</strong><small>${escapeHtml(getBookmakerName(bestLeg.bookmakerId))}</small>` : `<strong>-</strong>`}
+          </div>
+          <button type="button" class="betslip-remove" data-remove-key="${escapeHtml(item.key)}" aria-label="Ukloni">&times;</button>
+        </li>`;
+    })
+    .join("");
+
+  const rowsHtml = result.perBookmaker
+    .map((row) => {
+      const isBest = result.best?.bookmakerId === row.bookmakerId;
+      const note = row.complete ? "" : `<small>nedostaje ${row.missing.length}/${count}</small>`;
+      return `
+        <tr class="${isBest ? "is-best" : ""}${row.complete ? "" : " is-incomplete"}">
+          <td>${escapeHtml(getBookmakerName(row.bookmakerId))}${isBest ? ` <span class="betslip-badge">MAX</span>` : ""}</td>
+          <td class="num">${row.complete ? formatOdd(row.total) : "-"} ${note}</td>
+        </tr>`;
+    })
+    .join("");
+
+  els.betslipBody.innerHTML = `
+    <ol class="betslip-legs">${legsHtml}</ol>
+    <div class="betslip-summary">
+      <div class="betslip-best">
+        <span>Najveca ukupna kvota</span>
+        ${result.best
+      ? `<strong>${formatOdd(result.best.total)}</strong><em>${escapeHtml(getBookmakerName(result.best.bookmakerId))}</em>`
+      : `<strong>-</strong><em>nijedna kladionica nema sve parove</em>`}
+      </div>
+      ${result.bestCombo && count > 1
+      ? `<div class="betslip-combo"><span>Najbolje kvote kombinovano (vise kladionica)</span><strong>${formatOdd(result.bestCombo.total)}</strong></div>`
+      : ""}
+      ${fair ? `<div class="betslip-combo"><span>Pinnacle no-vig (fer kvota)</span><strong>${formatOdd(fair.total)}</strong></div>` : ""}
+    </div>
+    <table class="betslip-table">
+      <thead><tr><th>Kladionica</th><th class="num">Ukupna kvota</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+    <button type="button" class="betslip-clear" data-clear-betslip>Obrisi tiket</button>
+  `;
+}
+
 function render() {
   // If there's no data at all (e.g. league just switched), show the loader
   // and keep the table hidden until data arrives.
@@ -2241,6 +2428,8 @@ function render() {
   }
 
   renderSummary(matches);
+  syncBetslipOdds();
+  renderBetslip();
   updateValueTicker(matches);
   renderUnmatched();
 }
@@ -2291,6 +2480,32 @@ document.querySelectorAll(".accumulator-presets .preset-btn").forEach((btn) => {
     });
     render();
   });
+});
+
+els.oddsBody.addEventListener("click", (event) => {
+  const cell = event.target.closest("td[data-match-key][data-outcome]");
+  if (!cell) return;
+  toggleBetslipSelection(cell.dataset.matchKey, cell.dataset.outcome);
+});
+
+els.betslipToggle?.addEventListener("click", () => {
+  state.betslipOpen = !state.betslipOpen;
+  renderBetslip();
+});
+
+els.betslipBody?.addEventListener("click", (event) => {
+  const remove = event.target.closest("[data-remove-key]");
+  if (remove) {
+    state.betslip = state.betslip.filter((item) => item.key !== remove.dataset.removeKey);
+    saveBetslip();
+    render();
+    return;
+  }
+  if (event.target.closest("[data-clear-betslip]")) {
+    state.betslip = [];
+    saveBetslip();
+    render();
+  }
 });
 
 loadOdds();
