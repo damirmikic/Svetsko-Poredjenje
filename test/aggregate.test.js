@@ -126,3 +126,32 @@ test("never merges two different fixtures kicking off together", () => {
   // The critical assertion: City's price must not leak onto United's row.
   assert.equal(united.bookmakers.maxbet.odds.home, null);
 });
+
+test("gives a row to fixtures Pinnacle has not listed yet when two feeds agree", () => {
+  // Regression: Pinnacle listed only the next Serbian Super Liga match, so every
+  // other fixture of the round landed in "Neuparene" for every bookmaker.
+  const { matches, unmatched } = aggregateMatches([
+    feed("pinnacle", [
+      offer("pinnacle", "Radnicki Nis", "Zeleznicar Pancevo", { home: 2.5, draw: 3.1, away: 2.8 }),
+    ], true),
+    feed("merkurxtip", [
+      offer("merkurxtip", "Partizan", "Radnicki Nis", { home: 1.4, draw: 4.5, away: 7.0 }),
+      offer("merkurxtip", "Zeleznicar", "OFK Beograd", { home: 2.0, draw: 3.2, away: 3.8 }),
+    ]),
+    feed("maxbet", [
+      offer("maxbet", "Partizan", "Radnicki Nis", { home: 1.42, draw: 4.4, away: 6.8 }),
+      offer("maxbet", "Zeleznicar Pancevo", "OFK Beograd", { home: 2.05, draw: 3.1, away: 3.7 }),
+      offer("maxbet", "Only Here", "Nobody Else", { home: 2.0, draw: 3.0, away: 3.0 }),
+    ]),
+  ]);
+
+  assert.equal(matches.length, 3);
+  const partizan = matches.find((match) => match.home === "Partizan");
+  assert.equal(partizan.bookmakers.merkurxtip.odds.home, 1.4);
+  assert.equal(partizan.bookmakers.maxbet.odds.home, 1.42);
+  const ofk = matches.find((match) => match.away === "OFK Beograd");
+  assert.equal(ofk.bookmakers.merkurxtip.odds.home, 2.0);
+  assert.equal(ofk.bookmakers.maxbet.odds.home, 2.05);
+  // A fixture only one feed offers is still reported, not given its own row.
+  assert.deepEqual(unmatched.map((item) => item.home), ["Only Here"]);
+});
