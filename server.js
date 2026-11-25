@@ -2510,6 +2510,46 @@ function isOutright(home, away) {
   return false;
 }
 
+// An offer scoring below this against every Pinnacle row is a different
+// fixture, not a misspelling of one of them.
+const ORPHAN_FIXTURE_MAX_SCORE = 0.5;
+
+/**
+ * Builds rows for fixtures the source of truth does not list, but only where at
+ * least two bookmakers independently agree on the fixture. A lone offer stays
+ * in `unmatched`, where it is more likely a naming problem than a real match.
+ * Oddsmath feeds seed the clusters first since they use full English names.
+ */
+function placeOrphanFixtures(orphans, byMatch, report) {
+  const ordered = [...orphans].sort(
+    (a, b) => (b.result.bookmaker.type === "oddsmath") - (a.result.bookmaker.type === "oddsmath"),
+  );
+  const clusters = [];
+  for (const orphan of ordered) {
+    const seeds = clusters.map((cluster) => cluster.seed);
+    const hit = findFixtureMatch(orphan.offer, seeds);
+    const cluster = hit?.row ? clusters.find((entry) => entry.seed === hit.row) : null;
+    if (cluster && !cluster.members.some((member) => member.result === orphan.result)) {
+      cluster.members.push({ ...orphan, reversed: hit.reversed });
+    } else {
+      clusters.push({ seed: orphan.offer, members: [{ ...orphan, reversed: false }] });
+    }
+  }
+
+  for (const cluster of clusters) {
+    if (cluster.members.length < 2) {
+      for (const { result, offer, attempt } of cluster.members) report(result)(offer, attempt);
+      continue;
+    }
+    const row = makeMatchRow(cluster.seed);
+    for (const { result, offer, reversed } of cluster.members) {
+      attachOffer(row, orientOffer(offer, reversed));
+      result.matchedMatches += 1;
+    }
+    byMatch.set(cluster.seed.matchKey, row);
+  }
+}
+
 export function aggregateMatches(results) {
   // Filter out outrights/specials before aggregation
   for (const result of results) {
@@ -2539,15 +2579,35 @@ export function aggregateMatches(results) {
       byMatch.set(offer.matchKey, row);
     }
 
+    // Offers Pinnacle has no fixture for at all (it often lists only the next
+    // day or two of a smaller league). Kept aside instead of reported straight
+    // away, so fixtures several other feeds agree on can still get a row.
+    const orphans = [];
     for (const result of results) {
       if (result === truthResult) continue;
       result.matchedMatches = 0;
       for (const offer of result.matches) {
-        const found = findTruthRow(byMatch, offer, truthResult.bookmaker.sourceOfTruth ? report(result) : null);
+        let attempt;
+        const found = findTruthRow(
+          byMatch,
+          offer,
+          truthResult.bookmaker.sourceOfTruth
+            ? (unplaced, outcome) => {
+                attempt = outcome;
+              }
+            : null,
+        );
         if (found) {
           attachOffer(found.row, orientOffer(offer, found.reversed));
           result.matchedMatches += 1;
-        } else if (!truthResult.bookmaker.sourceOfTruth) {
+        } else if (truthResult.bookmaker.sourceOfTruth) {
+          // A near miss is probably a Pinnacle fixture under another spelling:
+          // that needs an alias, not a second row for the same match.
+          const nearMiss =
+            attempt && (attempt.reason !== "below-threshold" || attempt.score >= ORPHAN_FIXTURE_MAX_SCORE);
+          if (nearMiss) report(result)(offer, attempt);
+          else orphans.push({ result, offer, attempt });
+        } else {
           const newRow = makeMatchRow(offer);
           attachOffer(newRow, offer);
           byMatch.set(offer.matchKey, newRow);
@@ -2555,6 +2615,7 @@ export function aggregateMatches(results) {
         }
       }
     }
+    placeOrphanFixtures(orphans, byMatch, report);
   } else {
     for (const result of results) {
       for (const offer of result.matches) {
